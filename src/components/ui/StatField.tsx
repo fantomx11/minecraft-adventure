@@ -13,7 +13,7 @@ export function StatField({ icon, label, value }: StatFieldProps) {
       <label>
         <Icon name={icon} /> {label}
       </label>
-      <input class="pixel-input" type="text" readOnly value={value} />
+      <div class="pixel-input">{value}</div>
     </div>
   );
 }
