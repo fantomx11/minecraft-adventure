@@ -1,5 +1,5 @@
 import { Entity } from './Entity';
-import type { DamageInstance, DamageResult, CombatContext, CombatLifecycleHooks } from '../types/combat';
+import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
 
 export interface MobConfig {
   name: string;
@@ -36,21 +36,4 @@ export class Mob extends Entity implements Required<CombatLifecycleHooks> {
   public onRoundEnd(ctx: CombatContext): void { this.hooks.onRoundEnd?.(ctx); }
   public onDeath(ctx: CombatContext): void { this.hooks.onDeath?.(ctx); }
   public onCombatEnd(ctx: CombatContext): void { this.hooks.onCombatEnd?.(ctx); }
-
-  public takeDamage(instances: DamageInstance[], ctx: CombatContext): DamageResult {
-    let appliedTotal = 0;
-    const details: string[] = [];
-
-    for (const inst of instances) {
-      let amt = inst.amount;
-      if (inst.appliesArmor && this.armor > 0 && !ctx.combatState.ignoreArmor) {
-        amt = Math.max(0, amt - this.armor);
-      }
-      this.hearts = Math.max(0, this.hearts - amt);
-      appliedTotal += amt;
-      details.push(`${inst.source}: ${amt} DMG`);
-    }
-
-    return { appliedTotal, details };
-  }
 }

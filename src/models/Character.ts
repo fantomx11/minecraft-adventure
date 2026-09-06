@@ -85,12 +85,6 @@ export class Character extends Entity implements Required<CombatLifecycleHooks> 
     return slots.filter((item): item is Item => item !== undefined);
   }
 
-  public get inventoryItems(): Item[] {
-    return this.equipmentInventoryIds
-      .map((name) => getEquipmentItem(name))
-      .filter((item): item is Item => item !== undefined);
-  }
-
   // --- Hook Delegation ---
 
   private dispatchToEquipped(hookName: keyof CombatLifecycleHooks, ctx: CombatContext): void {
