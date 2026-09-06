@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Minecraft Adventure</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles/main.css" />
+</head>
+<body>
+  <!-- Global HUD Bar -->
+  <header id="hud-bar">
+    <div class="hud-stats">
+      <div class="hud-badge">
+        <span id="icon-hud-hero"></span>
+        <span id="hud-name">Steve</span>
+      </div>
+      <div class="hud-badge">
+        <span id="icon-hud-hp"></span>
+        <span id="hud-hp">20/20</span>
+      </div>
+      <div class="hud-badge">
+        <span id="icon-hud-attack"></span>
+        <span>ATK <span id="hud-attack">1</span></span>
+      </div>
+      <div class="hud-badge">
+        <span id="icon-hud-damage"></span>
+        <span>DMG <span id="hud-damage">1</span></span>
+      </div>
+      <div class="hud-badge">
+        <span id="icon-hud-armor"></span>
+        <span>ARM <span id="hud-armor">0</span></span>
+      </div>
+      <div class="hud-badge">
+        <span id="icon-hud-restarts"></span>
+        <span>RST <span id="hud-restarts">0</span></span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button id="btn-toggle-sidebar" class="pixel-btn" type="button">
+        <span id="icon-btn-sheet"></span> SHEET
+      </button>
+      <button id="btn-toggle-options" class="pixel-btn" type="button">
+        <span id="icon-btn-gear"></span> OPTIONS
+      </button>
+    </div>
+  </header>
+
+  <!-- View Mode Navigation -->
+  <nav class="mode-nav-bar">
+    <button type="button" class="pixel-btn btn-active" data-view="combat">
+      <span id="icon-nav-combat"></span> COMBAT
+    </button>
+    <button type="button" class="pixel-btn" data-view="forest">
+      <span id="icon-nav-forest"></span> FOREST
+    </button>
+    <button type="button" class="pixel-btn" data-view="mining">
+      <span id="icon-nav-mining"></span> MINING
+    </button>
+    <button type="button" class="pixel-btn" data-view="crafting">
+      <span id="icon-nav-crafting"></span> CRAFTING
+    </button>
+  </nav>
+
+  <!-- Main Adventure Container -->
+  <main class="arena-container">
+    <!-- View: Combat -->
+    <section id="view-combat" class="view-panel active">
+      <div class="pixel-frame">
+        <div class="frame-title">
+          <span id="icon-title-target"></span> ENCOUNTER TARGET
+        </div>
+        <div style="margin-bottom: 16px;">
+          <select id="mob-select" class="pixel-select"></select>
+        </div>
+        <div class="mob-stats-grid">
+          <div class="stat-field">
+            <label><span id="icon-label-mobhp"></span> HEARTS</label>
+            <input id="mob-hearts" class="pixel-input" type="text" readonly />
+          </div>
+          <div class="stat-field">
+            <label><span id="icon-label-mobdef"></span> DEFENSE</label>
+            <input id="mob-defense" class="pixel-input" type="text" readonly />
+          </div>
+          <div class="stat-field">
+            <label><span id="icon-label-mobdmg"></span> DAMAGE</label>
+            <input id="mob-damage" class="pixel-input" type="text" readonly />
+          </div>
+        </div>
+        <div id="status-display" class="status-indicator-bar">Status: Normal Encounter</div>
+      </div>
+
+      <div class="combat-middle-grid">
+        <div class="pixel-frame">
+          <div class="frame-title">
+            <span id="icon-title-roller"></span> ACTION ROLLER
+          </div>
+          <div class="dice-action-area">
+            <div class="dice-picker-group">
+              <label for="dice-count">DICE:</label>
+              <input id="dice-count" class="pixel-input" type="number" min="1" max="4" value="1" />
+            </div>
+            <button id="btn-roll-combat" type="button" class="pixel-btn btn-primary">
+              <span id="icon-btn-roll"></span> ROLL ATTACK
+            </button>
+          </div>
+          <div id="dice-tray" class="dice-tray"></div>
+        </div>
+
+        <div class="pixel-frame">
+          <div class="frame-title">
+            <span id="icon-title-rules"></span> MOB RULES & LOOT
+          </div>
+          <div id="mob-rules-stream"></div>
+        </div>
+      </div>
+
+      <div class="pixel-frame">
+        <div class="frame-title">
+          <span id="icon-title-log"></span> ADVENTURE LOG
+        </div>
+        <div id="combat-log-stream"></div>
+      </div>
+    </section>
+
+    <!-- View: Forest -->
+    <section id="view-forest" class="view-panel">
+      <div class="pixel-frame">
+        <div class="frame-title">
+          <span id="icon-title-forest"></span> DEEP WOODS
+        </div>
+        <p>Forage for basic materials or delve into the deep tree line for mob encounters.</p>
+        <div class="mode-actions-grid">
+          <button id="btn-forage" type="button" class="pixel-btn btn-success">
+            FORAGE WOODS (d6)
+          </button>
+          <button id="btn-delve-woods" type="button" class="pixel-btn btn-danger">
+            DELVE DEEPER
+          </button>
+        </div>
+        <div style="margin-top: 16px;">
+          Woods Cleared: <strong id="forest-cleared-count">0</strong>
+        </div>
+      </div>
+    </section>
+
+    <!-- View: Mining -->
+    <section id="view-mining" class="view-panel">
+      <div class="pixel-frame">
+        <div class="frame-title">
+          <span id="icon-title-mining"></span> MINING EXPEDITION
+        </div>
+        <p>
+          Pickaxe: <strong id="mining-pickaxe-name">None</strong> | 
+          Depth Bonus: <strong id="mining-bonus-val">+0</strong> | 
+          Mine Clears: <strong id="mine-cleared-count">0</strong>
+        </p>
+        <div class="mode-actions-grid">
+          <button id="btn-mine-vein" type="button" class="pixel-btn btn-primary">
+            MINE VEIN
+          </button>
+          <button id="btn-explore-mine" type="button" class="pixel-btn btn-danger">
+            EXPLORE DARK SHAFT
+          </button>
+          <button id="btn-leave-mine" type="button" class="pixel-btn">
+            SURFACE (RESET DEPTH)
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- View: Crafting -->
+    <section id="view-crafting" class="view-panel">
+      <div class="pixel-frame">
+        <div class="frame-title">
+          <span id="icon-title-crafting"></span> CRAFTING BENCH
+        </div>
+        <div id="crafting-recipes-container" class="crafting-grid"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Global Overlay for Drawers -->
+  <div id="drawer-overlay"></div>
+
+  <!-- Options Drawer -->
+  <aside id="options-drawer">
+    <div class="drawer-header">
+      <span><span id="icon-drawer-gear"></span> SETTINGS</span>
+      <button id="btn-close-options" type="button" class="pixel-btn btn-danger">X</button>
+    </div>
+    <div class="sidebar-field">
+      <label>MATERIAL INVENTORY LIMITS</label>
+      <div class="option-radio-group">
+        <div id="opt-rule-total" class="option-radio-card selected">
+          <strong>TOTAL CAPACITY (MAX 5)</strong>
+          <small>Carry at most 5 material units across all types combined.</small>
+        </div>
+        <div id="opt-rule-stack" class="option-radio-card">
+          <strong>PER-MATERIAL STACK (MAX 5 EACH)</strong>
+          <small>Carry up to 5 units per individual material type.</small>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-field" style="margin-top: 36px;">
+      <button id="btn-reset-hero" type="button" class="pixel-btn btn-danger" style="width: 100%;">
+        RESET CHARACTER DATA
+      </button>
+    </div>
+  </aside>
+
+  <!-- Sidebar Drawer: Character Sheet -->
+  <aside id="sidebar-drawer">
+    <div class="drawer-header">
+      <span><span id="icon-drawer-sheet"></span> CHARACTER SHEET</span>
+      <button id="btn-close-sidebar" type="button" class="pixel-btn btn-danger">X</button>
+    </div>
+
+    <div class="sidebar-field">
+      <label><span id="icon-sidebar-name"></span> HERO NAME</label>
+      <input id="char-name" class="pixel-input" type="text" />
+    </div>
+
+    <div class="sidebar-field">
+      <label>HEALTH POOL</label>
+      <div id="hearts-container" class="hearts-drawer-container"></div>
+      <div style="display: flex; gap: 8px; justify-content: center; margin-top: 8px;">
+        <button id="btn-sub-hp" type="button" class="pixel-btn btn-danger">-1 HP</button>
+        <button id="btn-add-hp" type="button" class="pixel-btn btn-success">+1 HP</button>
+        <button id="btn-full-hp" type="button" class="pixel-btn btn-primary">RESTORE</button>
+      </div>
+    </div>
+
+    <div class="sidebar-field">
+      <label>ATTRIBUTES</label>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <div class="hud-badge"><span id="icon-sidebar-attack"></span> ATK: <span id="stat-readout-attack">1</span></div>
+        <div class="hud-badge">DMG: <span id="stat-readout-damage">1</span></div>
+        <div class="hud-badge"><span id="icon-sidebar-armor"></span> ARM: <span id="stat-readout-armor">0</span></div>
+        <div class="hud-badge">RST: <span id="stat-readout-restarts">0</span></div>
+      </div>
+    </div>
+
+    <div class="sidebar-field">
+      <label>EQUIPPED SLOTS</label>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div>
+          <label style="font-size: 12px;">WEAPON</label>
+          <select id="slot-weapon" class="pixel-select"></select>
+        </div>
+        <div>
+          <label style="font-size: 12px;">ARMOR</label>
+          <select id="slot-armor" class="pixel-select"></select>
+        </div>
+        <div>
+          <label style="font-size: 12px;"><span id="icon-slot-pickaxe"></span> PICKAXE</label>
+          <select id="slot-pickaxe" class="pixel-select"></select>
+        </div>
+        <div>
+          <label style="font-size: 12px;">KEY ITEM</label>
+          <select id="slot-key" class="pixel-select"></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-field">
+      <label><span id="icon-sidebar-inv"></span> EQUIPMENT INVENTORY</label>
+      <ul id="equipment-list" style="list-style: none; padding: 0; margin: 0;"></ul>
+    </div>
+
+    <div class="sidebar-field">
+      <label id="materials-frame-title">MATERIALS</label>
+      <div id="materials-container" class="materials-grid"></div>
+    </div>
+  </aside>
+
+  <!-- Material Swap Modal -->
+  <div id="swap-modal-overlay">
+    <div class="swap-modal-frame pixel-frame">
+      <div class="frame-title">INVENTORY FULL</div>
+      <p style="margin: 16px 0;">
+        Choose a material to discard for 1 <strong id="swap-new-item-name"></strong>:
+      </p>
+      <div id="swap-options-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;"></div>
+      <button id="btn-discard-new" type="button" class="pixel-btn btn-danger" style="width: 100%;">
+        DISCARD NEW MATERIAL
+      </button>
+    </div>
+  </div>
+
+  <script type="module" src="/app.ts"></script>
+</body>
+</html>
