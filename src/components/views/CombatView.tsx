@@ -6,7 +6,6 @@ import { CombatMessage } from '../../types/combat';
 import { PixelFrame } from '../ui/PixelFrame';
 import { StatField } from '../ui/StatField';
 import { StatusBar } from '../ui/StatusBar';
-import { PixelDie } from '../ui/PixelDie';
 import { CombatLogStream } from '../ui/CombatLogStream';
 import { Character } from '../../models/Character';
 import { DiceTray } from '../ui/DiceTray';
