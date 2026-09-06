@@ -3,6 +3,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main] # or 'master', matching your default branch
+  workflow_dispatch:
 
 permissions:
   contents: read
