@@ -4,7 +4,7 @@ import type { CombatContext } from '../types/combat';
 
 export const TRACKED_MATERIALS: TrackedMaterial[] = [
   'Wood', 'Stone', 'Iron', 'Coal', 'Diamond',
-  'Leather', 'String', 'Wheat', 'Gunpowder', 'Slimeball'
+  'Leather', 'String', 'Wheat', 'Gunpowder', 'Slimeball', 'Fish'
 ];
 
 export const EQUIPMENT_DEFINITIONS: EquipmentConfig[] = [
@@ -67,9 +67,9 @@ export const EQUIPMENT_DEFINITIONS: EquipmentConfig[] = [
 
   // Pickaxes
   { name: 'Wooden Pickaxe', type: 'pickaxe', diceBonus: 1, description: 'Rolls 1 die on Mining Table' },
-  { name: 'Stone Pickaxe', type: 'pickaxe', diceBonus: 2, description: 'Rolls 2 dice, pick highest' },
-  { name: 'Iron Pickaxe', type: 'pickaxe', diceBonus: 3, description: 'Rolls 3 dice, pick highest' },
-  { name: 'Diamond Pickaxe', type: 'pickaxe', diceBonus: 3, description: 'Rolls 3 dice; can mine Obsidian' },
+  { name: 'Stone Pickaxe', type: 'pickaxe', diceBonus: 2, description: 'Rolls 2 dice, pick one' },
+  { name: 'Iron Pickaxe', type: 'pickaxe', diceBonus: 3, description: 'Rolls 3 dice, pick one' },
+  { name: 'Diamond Pickaxe', type: 'pickaxe', diceBonus: 4, description: 'Rolls 4 dice, pick one; can mine Obsidian' },
 
   // Key Items
   {

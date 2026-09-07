@@ -1,5 +1,12 @@
 import { Entity } from './Entity';
+import type { Character } from './Character';
 import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
+
+export interface LootResult {
+  won: boolean;
+  reward: string;
+  apply?: (hero: Character) => void;
+}
 
 export interface MobConfig {
   name: string;
@@ -9,6 +16,7 @@ export interface MobConfig {
   rules?: string;
   loot?: string;
   hooks?: CombatLifecycleHooks;
+  onLootRoll?: (roll: number) => LootResult;
 }
 
 export class Mob extends Entity implements Required<CombatLifecycleHooks> {
@@ -18,6 +26,7 @@ export class Mob extends Entity implements Required<CombatLifecycleHooks> {
   public loot: string;
   public hooks: CombatLifecycleHooks;
   public state: Record<string, any> = {};
+  private lootHandler?: (roll: number) => LootResult;
 
   constructor(config: MobConfig) {
     super(config.name, config.hearts, config.hearts);
@@ -26,6 +35,14 @@ export class Mob extends Entity implements Required<CombatLifecycleHooks> {
     this.rules = config.rules || 'Standard encounter.';
     this.loot = config.loot || 'None.';
     this.hooks = config.hooks || {};
+    this.lootHandler = config.onLootRoll;
+  }
+
+  public onLootRoll(roll: number): LootResult {
+    if (this.lootHandler) {
+      return this.lootHandler(roll);
+    }
+    return { won: false, reward: 'No loot' };
   }
 
   public onCombatStart(ctx: CombatContext): void { this.hooks.onCombatStart?.(ctx); }

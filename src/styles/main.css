@@ -316,6 +316,16 @@ body {
   color: #000;
 }
 
+.tag-bonus {
+  background: #f7d51d;
+  color: #000;
+}
+
+.tag-neutral {
+  background: #555555;
+  color: #fff;
+}
+
 .tag-miss {
   background: var(--pixel-red);
   color: #fff;

@@ -3,6 +3,8 @@ import { Character } from '../../models/Character';
 import { TrackedMaterial } from '../../types/inventory';
 import { PixelFrame } from '../ui/PixelFrame';
 import { StatusBar } from '../ui/StatusBar';
+import { DiceRoller } from '../ui/DiceRoller';
+import { DieItem } from '../../types/dice';
 
 interface ForestViewProps {
   hero: Character;
@@ -14,24 +16,31 @@ interface ForestViewProps {
 export function ForestView({ hero, onUpdate, onGainMaterial, onNavigateCombat }: ForestViewProps) {
   const [message, setMessage] = useState('The canopy is dense. What will you do?');
 
-  const handleForage = () => {
-    const roll = Math.floor(Math.random() * 6) + 1;
-    let woodGain = 1;
-    let extraBonus = '';
+  const handleForageRoll = (rolls: number[]): DieItem[] => {
+    const roll = rolls[0];
 
-    if (roll >= 4 && roll <= 5) {
-      woodGain = 2;
-      onGainMaterial('String', 1);
-      extraBonus = ' and 1 String';
-    } else if (roll === 6) {
-      woodGain = 3;
+    if (roll <= 2) {
+      onGainMaterial('Wood', 1);
+      setMessage(`Foraged (Roll d6 = ${roll}): Gathered 1 Wood.`);
+      onUpdate();
+      return [{ value: roll, tag: '1 WOOD', variant: 'neutral' }];
+    }
+    if (roll <= 4) {
+      onGainMaterial('Wheat', 1);
+      setMessage(`Foraged (Roll d6 = ${roll}): Gathered 1 Wheat.`);
+      onUpdate();
+      return [{ value: roll, tag: '1 WHEAT', variant: 'neutral' }];
+    }
+    if (roll === 5) {
       onGainMaterial('Leather', 1);
-      extraBonus = ' and 1 Leather';
+      setMessage(`Foraged (Roll d6 = ${roll}): Gathered 1 Leather.`);
+      onUpdate();
+      return [{ value: roll, tag: '1 LEATHER', variant: 'bonus' }];
     }
 
-    onGainMaterial('Wood', woodGain);
-    setMessage(`Foraged (Roll d6 = ${roll}): Gathered ${woodGain} Wood${extraBonus}.`);
-    onUpdate();
+    setMessage(`Ambush (Roll d6 = ${roll})! A wild Slime emerges!`);
+    onNavigateCombat('Slime');
+    return [{ value: roll, tag: 'AMBUSH!', variant: 'miss' }];
   };
 
   const handleDelveWoods = () => {
@@ -53,13 +62,19 @@ export function ForestView({ hero, onUpdate, onGainMaterial, onNavigateCombat }:
     <section class="view-panel active">
       <PixelFrame title="DEEP WOODS" icon="tree">
         <p style={{ fontSize: '13px', lineHeight: '1.8' }}>
-          Forage for raw wood and crafting components, or delve into the overgrowth to clear groves.
+          Forage for raw resources, or delve deeper to clear groves.
         </p>
 
-        <div class="mode-actions-grid">
-          <button type="button" class="pixel-btn btn-success" onClick={handleForage}>
-            FORAGE WOODS (d6)
-          </button>
+        <div style={{ marginBottom: '16px' }}>
+          <DiceRoller
+            diceCount={1}
+            rollButtonLabel="FORAGE WOODS (d6)"
+            buttonClass="btn-success"
+            onRoll={handleForageRoll}
+          />
+        </div>
+
+        <div class="mode-actions-grid" style={{ marginTop: '12px' }}>
           <button type="button" class="pixel-btn btn-danger" onClick={handleDelveWoods}>
             DELVE DEEPER
           </button>

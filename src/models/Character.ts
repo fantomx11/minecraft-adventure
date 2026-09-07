@@ -44,7 +44,7 @@ export class Character extends Entity implements Required<CombatLifecycleHooks> 
 
     const trackedList: TrackedMaterial[] = [
       'Wood', 'Stone', 'Iron', 'Coal', 'Diamond',
-      'Leather', 'String', 'Wheat', 'Gunpowder', 'Slimeball'
+      'Leather', 'String', 'Wheat', 'Gunpowder', 'Slimeball', 'Fish'
     ];
     this.materials = {} as Record<TrackedMaterial, number>;
     for (const mat of trackedList) {
@@ -100,7 +100,7 @@ export class Character extends Entity implements Required<CombatLifecycleHooks> 
   public onReceiveDamage(ctx: CombatContext): void { this.dispatchToEquipped('onReceiveDamage', ctx); }
   public onRoundEnd(ctx: CombatContext): void { this.dispatchToEquipped('onRoundEnd', ctx); }
   public onDeath(ctx: CombatContext): void { this.dispatchToEquipped('onDeath', ctx); }
-  public onCombatEnd(ctx: CombatContext): void { this.dispatchToEquipped('onCombatEnd', ctx); }
+  public onCombatEnd(ctx: CombatContext): void { this.resetHealth(); this.dispatchToEquipped('onCombatEnd', ctx); }
 
   // --- Stat Recalculation & State Management ---
 

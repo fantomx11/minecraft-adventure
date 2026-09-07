@@ -41,6 +41,20 @@ export function App() {
     setTick((t) => t + 1);
   };
 
+  const handleLoadCharacter = (rawJson: string): boolean => {
+    try {
+      const parsed = JSON.parse(rawJson);
+      const loadedHero = new Character(parsed); //[cite: 1]
+      setHero(loadedHero); //[cite: 1]
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(loadedHero.toJSON())); //[cite: 1]
+      setTick((t) => t + 1); //[cite: 1]
+      return true;
+    } catch (err) {
+      console.error('Invalid save data', err);
+      return false;
+    }
+  };
+
   const handleResetCharacter = () => {
     localStorage.removeItem(STORAGE_KEY);
     setHero(new Character(undefined));
@@ -124,11 +138,12 @@ export function App() {
       />
 
       <OptionsDrawer
-        hero={hero}
-        isOpen={optionsOpen}
-        onClose={() => setOptionsOpen(false)}
-        onUpdate={saveState}
-        onReset={handleResetCharacter}
+        hero={hero} //[cite: 1]
+        isOpen={optionsOpen} //[cite: 1]
+        onClose={() => setOptionsOpen(false)} //[cite: 1]
+        onUpdate={saveState} //[cite: 1]
+        onReset={handleResetCharacter} //[cite: 1]
+        onLoad={handleLoadCharacter}
       />
 
       <MaterialSwapModal

@@ -8,7 +8,8 @@ import { StatField } from '../ui/StatField';
 import { StatusBar } from '../ui/StatusBar';
 import { CombatLogStream } from '../ui/CombatLogStream';
 import { Character } from '../../models/Character';
-import { DiceTray } from '../ui/DiceTray';
+import { DiceRoller } from '../ui/DiceRoller';
+import { DieItem } from '../../types/dice';
 
 interface CombatViewProps {
   hero: Character;
@@ -20,6 +21,7 @@ export function CombatView({ hero, onUpdate, initialMobName }: CombatViewProps) 
   const [selectedMobName, setSelectedMobName] = useState<string>(
     initialMobName || BESTIARY[0].name
   );
+
   const [engine, setEngine] = useState<CombatEngine>(() => {
     const config = BESTIARY.find((m) => m.name === (initialMobName || BESTIARY[0].name)) || BESTIARY[0];
     const createdMob = new Mob(config);
@@ -28,11 +30,11 @@ export function CombatView({ hero, onUpdate, initialMobName }: CombatViewProps) 
     return eng;
   });
 
-  const [diceCount, setDiceCount] = useState<number>(hero.attack);
-  const [lastRolls, setLastRolls] = useState<number[]>([]);
+  const [, setLastRolls] = useState<number[]>([]);
   const [logs, setLogs] = useState<CombatMessage[]>([
     { type: 'notice', text: 'Encounter initialized. Choose dice & roll!' },
   ]);
+  const [lootClaimed, setLootClaimed] = useState(false);
 
   useEffect(() => {
     if (initialMobName && initialMobName !== selectedMobName) {
@@ -48,51 +50,37 @@ export function CombatView({ hero, onUpdate, initialMobName }: CombatViewProps) 
     eng.initCombat();
     setEngine(eng);
     setLastRolls([]);
+    setLootClaimed(false);
     setLogs([{ type: 'notice', text: `Approached a wild ${createdMob.name}!` }]);
   };
 
-  const handleRollCombat = () => {
+  const handleCombatRoll = (rolls: number[]): DieItem[] => {
     const activeMob = engine.ctx.combatState.mob;
     if (activeMob.isDefeated()) {
-      setLogs((prev) => [
-        { type: 'notice', text: `${activeMob.name} is defeated! Pick another target.` },
-        ...prev,
-      ]);
-      return;
+      setLogs((prev) => [{ type: 'notice', text: `${activeMob.name} is defeated! Pick another target.` }, ...prev]);
+      return rolls.map((r) => ({ value: r, tag: 'INACTIVE', variant: 'neutral' }));
     }
     if (hero.isDefeated()) {
-      setLogs((prev) => [
-        { type: 'special', text: 'You are defeated! Rest or restore HP on your character sheet.' },
-        ...prev,
-      ]);
-      return;
+      setLogs((prev) => [{ type: 'special', text: 'You are defeated! Rest or restore HP on your character sheet.' }, ...prev]);
+      return rolls.map((r) => ({ value: r, tag: 'DEFEAT', variant: 'miss' }));
     }
 
-    const roundRes = engine.executeRound(diceCount, activeMob.defense);
-    setLastRolls([...engine.ctx.roundState.rolls]);
+    const roundRes = engine.executeRound(rolls.length, activeMob.defense, rolls);
 
     const newMsgs: CombatMessage[] = [
       {
         type: 'notice',
-        text: `--- Turn ${engine.ctx.combatState.turn} --- (Rolls: [${engine.ctx.roundState.rolls.join(', ')}])`,
+        text: `--- Turn ${engine.ctx.combatState.turn} --- (Rolls: [${rolls.join(', ')}])`,
       },
       ...engine.ctx.roundState.messages,
     ];
 
     if (roundRes.heroDmgRes && roundRes.heroDmgRes.appliedTotal > 0) {
-      newMsgs.push({
-        type: 'hit',
-        text: `Hero dealt ${roundRes.heroDmgRes.appliedTotal} DMG to ${activeMob.name}.`,
-      });
+      newMsgs.push({ type: 'hit', text: `Hero dealt ${roundRes.heroDmgRes.appliedTotal} DMG to ${activeMob.name}.` });
     }
-
     if (roundRes.mobDmgRes && roundRes.mobDmgRes.appliedTotal > 0) {
-      newMsgs.push({
-        type: 'miss',
-        text: `${activeMob.name} hit Hero for ${roundRes.mobDmgRes.appliedTotal} DMG.`,
-      });
+      newMsgs.push({ type: 'miss', text: `${activeMob.name} hit Hero for ${roundRes.mobDmgRes.appliedTotal} DMG.` });
     }
-
     if (roundRes.status === 'victory') {
       newMsgs.push({ type: 'special', text: `VICTORY! ${activeMob.name} defeated!` });
     } else if (roundRes.status === 'defeat') {
@@ -101,6 +89,42 @@ export function CombatView({ hero, onUpdate, initialMobName }: CombatViewProps) 
 
     setLogs((prev) => [...newMsgs, ...prev].slice(0, 40));
     onUpdate();
+
+    return rolls.map((roll) => ({
+      value: roll,
+      tag: roll >= activeMob.defense ? 'HIT' : 'MISS',
+      variant: roll >= activeMob.defense ? 'hit' : 'miss',
+    }));
+  };
+
+  const handleLootRoll = (rolls: number[]): DieItem[] => {
+    const roll = rolls[0];
+    const activeMob = engine.ctx.combatState.mob;
+    const result = activeMob.onLootRoll(roll);
+
+    if (result.won) {
+      result.apply?.(hero);
+      setLogs((prev) => [
+        { type: 'special', text: `Loot Roll (${roll}): Success! Acquired ${result.reward}!` },
+        ...prev,
+      ]);
+    } else {
+      setLogs((prev) => [
+        { type: 'notice', text: `Loot Roll (${roll}): No loot dropped.` },
+        ...prev,
+      ]);
+    }
+
+    setLootClaimed(true);
+    onUpdate();
+
+    return [
+      {
+        value: roll,
+        tag: result.won ? result.reward.toUpperCase() : 'NO LOOT',
+        variant: result.won ? 'bonus' : 'neutral',
+      },
+    ];
   };
 
   const mob = engine.ctx.combatState.mob;
@@ -139,30 +163,33 @@ export function CombatView({ hero, onUpdate, initialMobName }: CombatViewProps) 
 
       {/* Middle Grid: Dice Roller & Mob Rules */}
       <div class="combat-middle-grid">
-        {/* Dice Roller */}
-        <PixelFrame title="ACTION ROLLER" icon="target">
-          <div class="dice-action-area">
-            <div class="dice-picker-group">
-              <label for="dice-count-input">DICE (MAX {maxAllowedDice}):</label>
-              <input
-                id="dice-count-input"
-                class="pixel-input"
-                type="number"
-                min="1"
-                max={maxAllowedDice}
-                value={Math.min(diceCount, maxAllowedDice)}
-                onInput={(e) => {
-                  const val = parseInt((e.target as HTMLInputElement).value, 10) || 1;
-                  setDiceCount(Math.max(1, Math.min(maxAllowedDice, val)));
-                }}
+        {/* Swaps between Action Roller and Loot Drop based on mob defeat */}
+        <PixelFrame
+          title={mob.isDefeated() ? 'LOOT DROP' : 'ACTION ROLLER'}
+          icon={mob.isDefeated() ? 'spark' : 'target'}
+        >
+          {mob.isDefeated() ? (
+            <div>
+              <p style={{ fontSize: '12px', margin: '0 0 12px 0' }}>
+                <strong>{mob.name}</strong> was defeated! Roll on the loot table:
+              </p>
+              <DiceRoller
+                diceCount={1}
+                rollButtonLabel={lootClaimed ? 'LOOT CLAIMED' : 'ROLL FOR LOOT (d6)'}
+                buttonClass="btn-success"
+                disabled={lootClaimed}
+                onRoll={handleLootRoll}
               />
             </div>
-            <button type="button" class="pixel-btn btn-primary" onClick={handleRollCombat}>
-              ROLL ATTACK
-            </button>
-          </div>
-
-          <DiceTray rolls={lastRolls} targetDef={mob.defense} />
+          ) : (
+            <DiceRoller
+              maxDice={maxAllowedDice}
+              rollButtonLabel="ROLL ATTACK"
+              buttonClass="btn-primary"
+              disabled={hero.isDefeated()}
+              onRoll={handleCombatRoll}
+            />
+          )}
         </PixelFrame>
 
         {/* Mob Rules */}

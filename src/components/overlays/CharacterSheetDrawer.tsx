@@ -1,10 +1,11 @@
 import type { Character } from '../../models/Character';
 import type { EquipmentType, TrackedMaterial } from '../../types/inventory';
-import { TRACKED_MATERIALS, getEquipmentItem } from '../../data/recipes';
 import { HealthPool } from '../ui/HealthPool';
 import { Icon } from '../ui/Icon';
 import { MaterialCard } from '../ui/MaterialCard';
 import { StatBadge } from '../ui/StatBadge';
+import { useState } from 'preact/hooks';
+import { TRACKED_MATERIALS, EQUIPMENT_DEFINITIONS, getEquipmentItem } from '../../data/recipes'; //
 
 interface CharacterSheetProps {
   hero: Character;
@@ -14,6 +15,8 @@ interface CharacterSheetProps {
 }
 
 export function CharacterSheetDrawer({ hero, isOpen, onClose, onUpdate }: CharacterSheetProps) {
+  const [selectedGearToAdd, setSelectedGearToAdd] = useState(EQUIPMENT_DEFINITIONS[0].name);
+
   const adjustHp = (delta: number) => {
     hero.changeHealth(delta);
     onUpdate();
@@ -50,6 +53,12 @@ export function CharacterSheetDrawer({ hero, isOpen, onClose, onUpdate }: Charac
   const handleAdjustMaterial = (mat: TrackedMaterial, delta: number) => {
     hero.adjustMaterial(mat, delta);
     onUpdate();
+  };
+
+  const handleAddManualEquipment = () => {
+    if (!selectedGearToAdd) return;
+    hero.addEquipment(selectedGearToAdd); //
+    onUpdate(); //[cite: 1]
   };
 
   const totalMats = hero.totalMaterialsCount;
@@ -137,6 +146,27 @@ export function CharacterSheetDrawer({ hero, isOpen, onClose, onUpdate }: Charac
         <label>
           <Icon name="book" /> INVENTORY ({hero.equipmentInventoryIds.length})
         </label>
+
+        {/* Manual Equipment Adder */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+          <select
+            class="pixel-select"
+            value={selectedGearToAdd}
+            onChange={(e) => setSelectedGearToAdd((e.target as HTMLSelectElement).value)}
+            style={{ flex: 1 }}
+          >
+            {EQUIPMENT_DEFINITIONS.map((eq) => (
+              <option key={eq.name} value={eq.name}>
+                [{eq.type.toUpperCase()}] {eq.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" class="pixel-btn btn-success" onClick={handleAddManualEquipment}>
+            + ADD
+          </button>
+        </div>
+
+        {/* Existing Inventory List */}
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {hero.equipmentInventoryIds.map((itemName, idx) => {
             const item = getEquipmentItem(itemName);
@@ -157,7 +187,7 @@ export function CharacterSheetDrawer({ hero, isOpen, onClose, onUpdate }: Charac
                 <button
                   type="button"
                   class="pixel-btn btn-danger"
-                  style={{ padding: '2px 6px', fontSize: '9px' }}
+                  style={{ padding: '6px 12px', fontSize: '9px' }}
                   onClick={() => handleDropEquipment(itemName)}
                 >
                   DROP

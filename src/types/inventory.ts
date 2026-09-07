@@ -10,7 +10,8 @@ export type TrackedMaterial =
   | 'String' 
   | 'Wheat' 
   | 'Gunpowder' 
-  | 'Slimeball';
+  | 'Slimeball'
+  | 'Fish';
 
 export type EquipmentType = 'weapon' | 'armor' | 'pickaxe' | 'key';
 export type InventoryRule = 'total' | 'stack';

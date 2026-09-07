@@ -27,3 +27,4 @@ export * from './ui/StatBadge';
 export * from './ui/StatField';
 export * from './ui/StatusBar';
 export * from './ui/CombatLogStream';
+export * from './ui/DiceRoller';

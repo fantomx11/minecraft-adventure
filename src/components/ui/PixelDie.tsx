@@ -1,7 +1,8 @@
+import { DieTagVariant } from "../../types/dice";
+
 interface PixelDieProps {
   value: number;
-  isHit: boolean;
-  size?: number;
+  variant?: DieTagVariant;
 }
 
 const PIPS = {
@@ -14,9 +15,22 @@ const PIPS = {
   br: <rect x="11" y="11" width="2" height="2" fill="#000" />,
 };
 
-export function PixelDie({ value, isHit }: PixelDieProps) {
-  const borderColor = isHit ? '#92cc41' : '#e76e55';
-  const bgColor = isHit ? '#eaf8db' : '#fdeeed';
+export function PixelDie({ value, variant = 'neutral' }: PixelDieProps) {
+  const borderColors: Record<DieTagVariant, string> = {
+    hit: '#92cc41',
+    miss: '#e76e55',
+    bonus: '#f7d51d',
+    neutral: '#555555',
+  };
+  const bgColors: Record<DieTagVariant, string> = {
+    hit: '#eaf8db',
+    miss: '#fdeeed',
+    bonus: '#fff9db',
+    neutral: '#ffffff',
+  };
+
+  const borderColor = borderColors[variant];
+  const bgColor = bgColors[variant];
 
   return (
     <svg class="pixel-die-svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
