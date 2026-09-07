@@ -55,66 +55,68 @@ export class CombatEngine {
     this.dispatchHook('onCombatStart');
   }
 
-public executeRound(diceCount: number, targetDef: number, customRolls?: number[]): RoundResult {
-  this.ctx.combatState.turn++;
-  this.ctx.roundState = {
-    diceCount: Math.min(this.ctx.combatState.hero.attack, Math.max(1, diceCount)),
-    rolls: [],
-    hits: 0,
-    misses: 0,
-    missRolls: [],
-    matchingHits: 0,
-    matchingMisses: 0,
-    heroDamageInstances: [],
-    mobDamageInstances: [],
-    messages: [],
-    preventDeath: false,
-    dyingEntity: null,
-  };
+  public executeRound(diceCount: number, targetDef: number, customRolls?: number[]): RoundResult {
+    this.ctx.combatState.turn++;
+    this.ctx.roundState = {
+      diceCount: Math.min(this.ctx.combatState.hero.attack, Math.max(1, diceCount)),
+      rolls: [],
+      hits: 0,
+      misses: 0,
+      missRolls: [],
+      matchingHits: 0,
+      matchingMisses: 0,
+      heroDamageInstances: [],
+      mobDamageInstances: [],
+      messages: [],
+      preventDeath: false,
+      dyingEntity: null,
+    };
 
-  this.dispatchHook('onRoundStart');
-  if (this.ctx.combatState.hero.hearts <= 0 && !this.handleDeath(this.ctx.combatState.hero)) {
-    return { status: 'defeat' };
+    this.dispatchHook('onRoundStart');
+    if (this.ctx.combatState.hero.hearts <= 0 && !this.handleDeath(this.ctx.combatState.hero)) {
+      return { status: 'defeat' };
+    }
+
+    // Pass custom rolls to dice evaluation
+    this.rollDice(targetDef, customRolls);
+    this.dispatchHook('onRollEvaluated');
+
+    this.applyStandardDamages();
+    this.dispatchHook('onDealDamage');
+    this.dispatchHook('onReceiveDamage');
+
+    const heroDmgRes = this.ctx.combatState.mob.takeDamage(this.ctx.roundState.heroDamageInstances, this.ctx);
+    const mobDmgRes = this.ctx.combatState.hero.takeDamage(this.ctx.roundState.mobDamageInstances, this.ctx);
+
+    if (this.ctx.combatState.mob.isDefeated() && !this.handleDeath(this.ctx.combatState.mob)) {
+      this.dispatchHook('onCombatEnd');
+      return { status: 'victory', heroDmgRes, mobDmgRes };
+    }
+    if (this.ctx.combatState.hero.isDefeated() && !this.handleDeath(this.ctx.combatState.hero)) {
+      this.dispatchHook('onCombatEnd');
+      return { status: 'defeat', heroDmgRes, mobDmgRes };
+    }
+
+    this.dispatchHook('onRoundEnd');
+    return { status: 'ongoing', heroDmgRes, mobDmgRes };
   }
 
-  // Pass custom rolls to dice evaluation
-  this.rollDice(targetDef, customRolls);
-  this.dispatchHook('onRollEvaluated');
-
-  this.applyStandardDamages();
-  this.dispatchHook('onDealDamage');
-  this.dispatchHook('onReceiveDamage');
-
-  const heroDmgRes = this.ctx.combatState.mob.takeDamage(this.ctx.roundState.heroDamageInstances, this.ctx);
-  const mobDmgRes = this.ctx.combatState.hero.takeDamage(this.ctx.roundState.mobDamageInstances, this.ctx);
-
-  if (this.ctx.combatState.mob.isDefeated() && !this.handleDeath(this.ctx.combatState.mob)) {
-    return { status: 'victory', heroDmgRes, mobDmgRes };
-  }
-  if (this.ctx.combatState.hero.isDefeated() && !this.handleDeath(this.ctx.combatState.hero)) {
-    return { status: 'defeat', heroDmgRes, mobDmgRes };
-  }
-
-  this.dispatchHook('onRoundEnd');
-  return { status: 'ongoing', heroDmgRes, mobDmgRes };
-}
-
-public rollDice(targetDef: number, customRolls?: number[]): void {
-  const counts: Record<number, number> = {};
-  for (let i = 0; i < this.ctx.roundState.diceCount; i++) {
-    const val = customRolls?.[i] ?? Math.floor(Math.random() * 6) + 1;
-    this.ctx.roundState.rolls.push(val);
-    counts[val] = (counts[val] || 0) + 1;
-    if (val >= targetDef) {
-      this.ctx.roundState.hits++;
-      if (counts[val] >= 2) this.ctx.roundState.matchingHits = counts[val];
-    } else {
-      this.ctx.roundState.misses++;
-      this.ctx.roundState.missRolls.push(val);
-      if (counts[val] >= 2) this.ctx.roundState.matchingMisses = counts[val];
+  public rollDice(targetDef: number, customRolls?: number[]): void {
+    const counts: Record<number, number> = {};
+    for (let i = 0; i < this.ctx.roundState.diceCount; i++) {
+      const val = customRolls?.[i] ?? Math.floor(Math.random() * 6) + 1;
+      this.ctx.roundState.rolls.push(val);
+      counts[val] = (counts[val] || 0) + 1;
+      if (val >= targetDef) {
+        this.ctx.roundState.hits++;
+        if (counts[val] >= 2) this.ctx.roundState.matchingHits = counts[val];
+      } else {
+        this.ctx.roundState.misses++;
+        this.ctx.roundState.missRolls.push(val);
+        if (counts[val] >= 2) this.ctx.roundState.matchingMisses = counts[val];
+      }
     }
   }
-}
 
   private applyStandardDamages(): void {
     const bonusHits = this.ctx.roundState.matchingHits >= 2 ? 1 : 0;

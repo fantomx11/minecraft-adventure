@@ -1,23 +1,61 @@
 import { useState } from 'preact/hooks';
 import { Character } from "../../models/Character";
-import { Icon } from "../ui/Icon"; //[cite: 1]
+import { Icon } from "../ui/Icon";
+import { Passage } from '../../types/narrative';
 
 interface OptionsDrawerProps {
-  hero: Character; //[cite: 1]
-  isOpen: boolean; //[cite: 1]
-  onClose: () => void; //[cite: 1]
-  onUpdate: () => void; //[cite: 1]
-  onReset: () => void; //[cite: 1]
+  hero: Character;
+  isOpen: boolean;
+  passages: Record<string, Passage>;
+  isCustomStory: boolean;
+  onClose: () => void;
+  onUpdate: () => void;
+  onReset: () => void;
   onLoad: (json: string) => boolean;
+  onLoadStory: (json: string) => boolean;
+  onResetStory: () => void;
 }
 
-export function OptionsDrawer({ hero, isOpen, onClose, onUpdate, onReset, onLoad }: OptionsDrawerProps) { //[cite: 1]
+export function OptionsDrawer({
+  hero,
+  isOpen,
+  passages,
+  isCustomStory,
+  onClose,
+  onUpdate,
+  onReset,
+  onLoad,
+  onLoadStory,
+  onResetStory,
+}: OptionsDrawerProps) {
   const [importString, setImportString] = useState('');
   const [statusNotice, setStatusNotice] = useState('');
+  const [storyImportString, setStoryImportString] = useState('');
+  const [storyNotice, setStoryNotice] = useState('');
+
+  const handleCopyStory = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(passages, null, 2));
+      setStoryNotice('Current story JSON copied to clipboard!');
+    } catch {
+      setStoryNotice('Failed to copy story to clipboard.');
+    }
+  };
+
+  const handleApplyStory = () => {
+    if (!storyImportString.trim()) return;
+    const ok = onLoadStory(storyImportString);
+    if (ok) {
+      setStoryNotice('Custom narrative pack loaded successfully!');
+      setStoryImportString('');
+    } else {
+      setStoryNotice('Error: Invalid narrative pack schema. Must contain valid passages.');
+    }
+  };
 
   const handleCopySave = async () => {
     try {
-      const dataStr = JSON.stringify(hero.toJSON(), null, 2); //[cite: 1]
+      const dataStr = JSON.stringify(hero.toJSON(), null, 2);
       await navigator.clipboard.writeText(dataStr);
       setStatusNotice('Save copied to clipboard!');
     } catch {
@@ -37,33 +75,116 @@ export function OptionsDrawer({ hero, isOpen, onClose, onUpdate, onReset, onLoad
   };
 
   return (
-    <aside id="options-drawer" class={isOpen ? 'active' : ''}> {/*[cite: 1] */}
-      <div class="drawer-header"> {/*[cite: 1] */}
+    <aside id="options-drawer" class={isOpen ? 'active' : ''}>
+      <div class="drawer-header">
         <span>
-          <Icon name="gear" /> SETTINGS {/*[cite: 1] */}
+          <Icon name="gear" /> SETTINGS
         </span>
-        <button type="button" class="pixel-btn btn-danger" onClick={onClose}> {/*[cite: 1] */}
-          X {/*[cite: 1] */}
+        <button type="button" class="pixel-btn btn-danger" onClick={onClose}>
+          X
         </button>
+      </div>
+
+      <div class="sidebar-field">
+        <label>GAMEPLAY MODE</label>
+        <div class="option-radio-group">
+          <div
+            class={`option-radio-card ${!hero.narrativeMode ? 'selected' : ''}`}
+            onClick={() => {
+              hero.narrativeMode = false;
+              onUpdate();
+            }}
+          >
+            <strong>Sandbox Mode</strong>
+            <small>Free navigation between Combat, Forest, Mining, and Crafting.</small>
+          </div>
+          <div
+            class={`option-radio-card ${hero.narrativeMode ? 'selected' : ''}`}
+            onClick={() => {
+              hero.narrativeMode = true;
+              onUpdate();
+            }}
+          >
+            <strong>Narrative Mode</strong>
+            <small>Story passages with choices, item requirements, and screen unlocks.</small>
+          </div>
+        </div>
+
+        {/* Narrative Story Pack Loader */}
+        {hero.narrativeMode && (
+          <div class="sidebar-field" style={{ marginBottom: '24px' }}>
+            <label>
+              <Icon name="book" /> STORY PACK (JSON)
+            </label>
+            <div style={{ fontSize: '11px', color: '#666', marginBottom: '8px' }}>
+              Current: <strong>{isCustomStory ? 'Custom Narrative' : 'Built-in Overworld Quest'}</strong> (
+              {Object.keys(passages).length} passages)
+            </div>
+
+            <button
+              type="button"
+              class="pixel-btn"
+              style={{ width: '100%', marginBottom: '8px' }}
+              onClick={handleCopyStory}
+            >
+              EXPORT CURRENT STORY JSON
+            </button>
+
+            <textarea
+              class="pixel-input"
+              placeholder="Paste custom narrative JSON here..."
+              value={storyImportString}
+              onInput={(e) => setStoryImportString((e.target as HTMLTextAreaElement).value)}
+              rows={3}
+              style={{ resize: 'vertical', width: '100%', marginBottom: '8px' }}
+            />
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                class="pixel-btn btn-success"
+                style={{ flex: 1 }}
+                onClick={handleApplyStory}
+              >
+                LOAD STORY JSON
+              </button>
+              {isCustomStory && (
+                <button
+                  type="button"
+                  class="pixel-btn btn-danger"
+                  onClick={onResetStory}
+                >
+                  RESET STORY
+                </button>
+              )}
+            </div>
+
+            {storyNotice && (
+              <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--pixel-yellow)' }}>
+                {storyNotice}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Inventory Rule Section */}
       <div class="sidebar-field">
-        <label>INVENTORY RULE</label> {/*[cite: 1] */}
-        <div class="option-radio-group"> {/*[cite: 1] */}
+        <label>INVENTORY RULE</label>
+        <div class="option-radio-group">
           <div
-            class={`option-radio-card ${hero.materialRule === 'total' ? 'selected' : ''}`} //[cite: 1]
-            onClick={() => { hero.materialRule = 'total'; onUpdate(); }} //[cite: 1]
+            class={`option-radio-card ${hero.materialRule === 'total' ? 'selected' : ''}`}
+            onClick={() => { hero.materialRule = 'total'; onUpdate(); }}
           >
-            <strong>Total Limit (5 Total)</strong> {/*[cite: 1] */}
-            <small>Hero can only carry 5 materials in total.</small> {/*[cite: 1] */}
+            <strong>Total Limit (5 Total)</strong>
+            <small>Hero can only carry 5 materials in total.</small>
           </div>
           <div
-            class={`option-radio-card ${hero.materialRule === 'stack' ? 'selected' : ''}`} //[cite: 1]
-            onClick={() => { hero.materialRule = 'stack'; onUpdate(); }} //[cite: 1]
+            class={`option-radio-card ${hero.materialRule === 'stack' ? 'selected' : ''}`}
+            onClick={() => { hero.materialRule = 'stack'; onUpdate(); }}
           >
-            <strong>Stack Limit (5 Each)</strong> {/*[cite: 1] */}
-            <small>Hero can hold up to 5 of each material type.</small> {/*[cite: 1] */}
+            <strong>Stack Limit (5 Each)</strong>
+            <small>Hero can hold up to 5 of each material type.</small>
           </div>
         </div>
       </div>
@@ -106,8 +227,8 @@ export function OptionsDrawer({ hero, isOpen, onClose, onUpdate, onReset, onLoad
 
       {/* Reset */}
       <div class="sidebar-field" style={{ marginTop: '28px' }}>
-        <button type="button" class="pixel-btn btn-danger" style={{ width: '100%' }} onClick={onReset}> {/*[cite: 1] */}
-          RESET CHARACTER DATA {/*[cite: 1] */}
+        <button type="button" class="pixel-btn btn-danger" style={{ width: '100%' }} onClick={onReset}>
+          RESET CHARACTER DATA
         </button>
       </div>
     </aside>

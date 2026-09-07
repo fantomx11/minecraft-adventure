@@ -14,10 +14,13 @@ export interface SerializedCharacter {
   materialRule: InventoryRule;
   forestCleared: number;
   mineCleared: number;
+  narrativeMode?: boolean;
+  currentPassageId?: string;
+  visitedPassages?: string[];
 }
 
 export class Character extends Entity implements Required<CombatLifecycleHooks> {
-  public attack: number = 1;
+public attack: number = 1;
   public damage: number = 1;
   public restarts: number = 0;
   public equipmentInventoryIds: string[] = [];
@@ -26,6 +29,9 @@ export class Character extends Entity implements Required<CombatLifecycleHooks> 
   public materialRule: InventoryRule;
   public forestCleared: number = 0;
   public mineCleared: number = 0;
+  public narrativeMode: boolean = false;
+  public currentPassageId: string = 'start';
+  public visitedPassages: string[] = [];
 
   constructor(data?: Partial<SerializedCharacter>) {
     super(data?.name || 'Steve', 20, data?.health ?? 20);
@@ -33,7 +39,9 @@ export class Character extends Entity implements Required<CombatLifecycleHooks> 
     this.materialRule = data?.materialRule || 'total';
     this.forestCleared = data?.forestCleared ?? 0;
     this.mineCleared = data?.mineCleared ?? 0;
-
+    this.narrativeMode = data?.narrativeMode ?? false;
+    this.currentPassageId = data?.currentPassageId || 'start';
+    this.visitedPassages = data?.visitedPassages ? [...data.visitedPassages] : [];
     this.equipmentInventoryIds = data?.equipmentInventoryIds ?? ['Wooden Pickaxe'];
     this.equipped = {
       weapon: data?.equipped?.weapon ?? null,
@@ -41,7 +49,6 @@ export class Character extends Entity implements Required<CombatLifecycleHooks> 
       pickaxe: data?.equipped?.pickaxe ?? 'Wooden Pickaxe',
       key: data?.equipped?.key ?? null,
     };
-
     const trackedList: TrackedMaterial[] = [
       'Wood', 'Stone', 'Iron', 'Coal', 'Diamond',
       'Leather', 'String', 'Wheat', 'Gunpowder', 'Slimeball', 'Fish'
@@ -50,7 +57,6 @@ export class Character extends Entity implements Required<CombatLifecycleHooks> 
     for (const mat of trackedList) {
       this.materials[mat] = Math.max(0, data?.materials?.[mat] ?? 0);
     }
-
     this.recalculateStats();
   }
 
@@ -181,7 +187,7 @@ export class Character extends Entity implements Required<CombatLifecycleHooks> 
     this.resetHealth();
   }
 
-  public toJSON(): SerializedCharacter {
+public toJSON(): SerializedCharacter {
     return {
       name: this.name,
       health: this.hearts,
@@ -192,6 +198,9 @@ export class Character extends Entity implements Required<CombatLifecycleHooks> 
       materialRule: this.materialRule,
       forestCleared: this.forestCleared,
       mineCleared: this.mineCleared,
+      narrativeMode: this.narrativeMode,
+      currentPassageId: this.currentPassageId,
+      visitedPassages: [...this.visitedPassages],
     };
   }
 }

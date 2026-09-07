@@ -14,6 +14,7 @@ export * from './views/CombatView';
 export * from './views/ForestView';
 export * from './views/MiningView';
 export * from './views/CraftingView';
+export * from './views/NarrativeView';
 
 // UI Primitives & Widgets
 export * from './ui/Icon';

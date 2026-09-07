@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import { Character } from './models/Character';
 import { TrackedMaterial } from './types/inventory';
+import { CUSTOM_STORY_STORAGE_KEY, getInitialStoryPassages, STORY_PASSAGES, validateNarrative } from './data/storyPassages';
 import {
   HudBar,
   ModeNavBar,
@@ -8,12 +9,15 @@ import {
   ForestView,
   MiningView,
   CraftingView,
+  NarrativeView,
   CharacterSheetDrawer,
   OptionsDrawer,
   MaterialSwapModal,
 } from './components';
+import { Passage } from './types/narrative';
 
-export type ActiveView = 'combat' | 'forest' | 'mining' | 'crafting';
+export type ActiveView = 'narrative' | 'combat' | 'forest' | 'mining' | 'crafting';
+
 const STORAGE_KEY = 'minecraft_multimode_rpg_data';
 
 export function App() {
@@ -29,11 +33,60 @@ export function App() {
     return new Character(undefined);
   });
 
-  const [activeView, setActiveView] = useState<ActiveView>('combat');
+  const [activeView, setActiveView] = useState<ActiveView>(() =>
+    hero.narrativeMode ? 'narrative' : 'combat'
+  );
   const [sheetOpen, setSheetOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [targetMobName, setTargetMobName] = useState<string | undefined>(undefined);
   const [pendingMaterial, setPendingMaterial] = useState<TrackedMaterial | null>(null);
+  const [narrativeVictoryPassageId, setNarrativeVictoryPassageId] = useState<string | undefined>(
+    undefined
+  );
+
+  const [storyPassages, setStoryPassages] = useState<Record<string, Passage>>(
+    getInitialStoryPassages
+  );
+  const [isCustomStory, setIsCustomStory] = useState<boolean>(() =>
+    localStorage.getItem(CUSTOM_STORY_STORAGE_KEY) !== null
+  );
+
+  const handleLoadStory = (jsonStr: string): boolean => {
+    try {
+      const parsed = JSON.parse(jsonStr);
+      const validated = validateNarrative(parsed);
+      if (!validated) return false;
+
+      setStoryPassages(validated);
+      setIsCustomStory(true);
+      localStorage.setItem(CUSTOM_STORY_STORAGE_KEY, JSON.stringify(validated));
+
+      // Reset story progress to entry passage
+      const startKey = validated.start ? 'start' : Object.keys(validated)[0];
+      hero.currentPassageId = startKey;
+      hero.visitedPassages = [];
+      saveState();
+      return true;
+    } catch (err) {
+      console.error('Invalid story JSON', err);
+      return false;
+    }
+  };
+
+  const handleResetStory = () => {
+    localStorage.removeItem(CUSTOM_STORY_STORAGE_KEY);
+    setStoryPassages(STORY_PASSAGES);
+    setIsCustomStory(false);
+    hero.currentPassageId = 'start';
+    hero.visitedPassages = [];
+    saveState();
+  };
+
+  const currentPassage =
+    storyPassages[hero.currentPassageId] ||
+    storyPassages[Object.keys(storyPassages)[0]];
+  const accessibleViews = hero.narrativeMode ? currentPassage?.accessibleViews || [] : undefined;
+
   const [, setTick] = useState(0);
 
   const saveState = () => {
@@ -41,29 +94,19 @@ export function App() {
     setTick((t) => t + 1);
   };
 
-  const handleLoadCharacter = (rawJson: string): boolean => {
-    try {
-      const parsed = JSON.parse(rawJson);
-      const loadedHero = new Character(parsed); //[cite: 1]
-      setHero(loadedHero); //[cite: 1]
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(loadedHero.toJSON())); //[cite: 1]
-      setTick((t) => t + 1); //[cite: 1]
-      return true;
-    } catch (err) {
-      console.error('Invalid save data', err);
-      return false;
-    }
-  };
-
-  const handleResetCharacter = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    setHero(new Character(undefined));
-    setOptionsOpen(false);
-  };
-
-  const handleTriggerCombat = (mobName: string) => {
+  const handleTriggerCombat = (mobName: string, onVictoryPassageId?: string) => {
     setTargetMobName(mobName);
+    setNarrativeVictoryPassageId(onVictoryPassageId);
     setActiveView('combat');
+  };
+
+  const handleReturnToNarrative = (targetPassageId?: string) => {
+    if (targetPassageId) {
+      hero.currentPassageId = targetPassageId;
+    }
+    setNarrativeVictoryPassageId(undefined);
+    setActiveView('narrative');
+    saveState();
   };
 
   const handleGainMaterial = (mat: TrackedMaterial, amount: number = 1) => {
@@ -84,6 +127,26 @@ export function App() {
     }
   };
 
+  const handleResetCharacter = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setHero(new Character(undefined));
+    setActiveView('combat');
+    setOptionsOpen(false);
+  };
+
+  const handleLoadCharacter = (rawJson: string): boolean => {
+    try {
+      const loadedHero = new Character(JSON.parse(rawJson));
+      setHero(loadedHero);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(loadedHero.toJSON()));
+      setTick((t) => t + 1);
+      return true;
+    } catch (err) {
+      console.error('Invalid save data', err);
+      return false;
+    }
+  };
+
   return (
     <div class="app-root">
       {/* Top HUD */}
@@ -93,13 +156,55 @@ export function App() {
         onOpenOptions={() => setOptionsOpen(true)}
       />
 
-      {/* Navigation */}
-      <ModeNavBar activeView={activeView} onSelectView={setActiveView} />
+      {/* Navigation (Context-aware in Narrative Mode) */}
+      <ModeNavBar
+        hero={hero}
+        activeView={activeView}
+        onSelectView={setActiveView}
+        accessibleViews={accessibleViews}
+        combatActive={narrativeVictoryPassageId !== undefined}
+      />
+
+      {/* Narrative Mode Return Banner if currently in an unlocked sub-view */}
+      {hero.narrativeMode && activeView !== 'narrative' && activeView !== 'combat' && (
+        <div style={{ maxWidth: '1100px', margin: '12px auto 0 auto', padding: '0 16px' }}>
+          <button
+            type="button"
+            class="pixel-btn btn-active"
+            style={{ width: '100%' }}
+            onClick={() => setActiveView('narrative')}
+          >
+            ← RETURN TO STORY ({currentPassage.title.toUpperCase()})
+          </button>
+        </div>
+      )}
 
       {/* Active Panel View */}
       <main class="arena-container">
+        {activeView === 'narrative' && (
+          <NarrativeView
+            hero={hero}
+            passages={storyPassages}
+            onUpdate={saveState}
+            onNavigateView={setActiveView}
+            onTriggerCombat={handleTriggerCombat}
+            onGainMaterial={handleGainMaterial}
+          />
+        )}
         {activeView === 'combat' && (
-          <CombatView hero={hero} onUpdate={saveState} initialMobName={targetMobName} />
+          <CombatView
+            hero={hero}
+            onUpdate={saveState}
+            initialMobName={targetMobName}
+            narrativeContext={
+              hero.narrativeMode
+                ? {
+                  victoryPassageId: narrativeVictoryPassageId,
+                  onReturnToNarrative: handleReturnToNarrative,
+                }
+                : undefined
+            }
+          />
         )}
         {activeView === 'forest' && (
           <ForestView
@@ -129,23 +234,24 @@ export function App() {
           setOptionsOpen(false);
         }}
       />
-
       <CharacterSheetDrawer
         hero={hero}
         isOpen={sheetOpen}
         onClose={() => setSheetOpen(false)}
         onUpdate={saveState}
       />
-
       <OptionsDrawer
-        hero={hero} //[cite: 1]
-        isOpen={optionsOpen} //[cite: 1]
-        onClose={() => setOptionsOpen(false)} //[cite: 1]
-        onUpdate={saveState} //[cite: 1]
-        onReset={handleResetCharacter} //[cite: 1]
+        hero={hero}
+        isOpen={optionsOpen}
+        passages={storyPassages}
+        isCustomStory={isCustomStory}
+        onClose={() => setOptionsOpen(false)}
+        onUpdate={saveState}
+        onReset={handleResetCharacter}
         onLoad={handleLoadCharacter}
+        onLoadStory={handleLoadStory}
+        onResetStory={handleResetStory}
       />
-
       <MaterialSwapModal
         isOpen={pendingMaterial !== null}
         newItemName={pendingMaterial}

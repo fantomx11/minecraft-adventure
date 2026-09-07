@@ -15,9 +15,13 @@ interface CombatViewProps {
   hero: Character;
   onUpdate: () => void;
   initialMobName?: string;
+  narrativeContext?: {
+    victoryPassageId?: string;
+    onReturnToNarrative?: (targetPassageId?: string) => void;
+  };
 }
 
-export function CombatView({ hero, onUpdate, initialMobName }: CombatViewProps) {
+export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }: CombatViewProps) {
   const [selectedMobName, setSelectedMobName] = useState<string>(
     initialMobName || BESTIARY[0].name
   );
@@ -132,6 +136,29 @@ export function CombatView({ hero, onUpdate, initialMobName }: CombatViewProps) 
 
   return (
     <section class="view-panel active">
+      {narrativeContext && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <button
+            type="button"
+            class="pixel-btn"
+            onClick={() => narrativeContext.onReturnToNarrative?.()}
+          >
+            ← RETREAT TO STORY
+          </button>
+          {mob.isDefeated() && narrativeContext.victoryPassageId && (
+            <button
+              type="button"
+              class="pixel-btn btn-success"
+              onClick={() =>
+                narrativeContext.onReturnToNarrative?.(narrativeContext.victoryPassageId)
+              }
+            >
+              CONTINUE STORY →
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Target Selector & Mob Stats */}
       <PixelFrame title="ENCOUNTER TARGET" icon="sword">
         <div style={{ marginBottom: '16px' }}>
