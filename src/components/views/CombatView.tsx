@@ -17,6 +17,7 @@ interface CombatViewProps {
   initialMobName?: string;
   narrativeContext?: {
     victoryPassageId?: string;
+    defeatPassageId?: string;
     onReturnToNarrative?: (targetPassageId?: string) => void;
   };
 }
@@ -34,7 +35,7 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
     return eng;
   });
 
-  const [, setLastRolls] = useState<number[]>([]);
+  const [combatStatus, setCombatStatus] = useState<'ongoing' | 'victory' | 'defeat'>('ongoing');
   const [logs, setLogs] = useState<CombatMessage[]>([
     { type: 'notice', text: 'Encounter initialized. Choose dice & roll!' },
   ]);
@@ -53,19 +54,19 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
     const eng = new CombatEngine(hero, createdMob);
     eng.initCombat();
     setEngine(eng);
-    setLastRolls([]);
     setLootClaimed(false);
+    setCombatStatus('ongoing');
     setLogs([{ type: 'notice', text: `Approached a wild ${createdMob.name}!` }]);
   };
 
   const handleCombatRoll = (rolls: number[]): DieItem[] => {
     const activeMob = engine.ctx.combatState.mob;
-    if (activeMob.isDefeated()) {
-      setLogs((prev) => [{ type: 'notice', text: `${activeMob.name} is defeated! Pick another target.` }, ...prev]);
+    if (isVictorious) {
+      setLogs((prev) => [{ type: 'notice', text: `${activeMob.name} is defeated! Claim loot or continue.` }, ...prev]);
       return rolls.map((r) => ({ value: r, tag: 'INACTIVE', variant: 'neutral' }));
     }
-    if (hero.isDefeated()) {
-      setLogs((prev) => [{ type: 'special', text: 'You are defeated! Rest or restore HP on your character sheet.' }, ...prev]);
+    if (isDefeated) {
+      setLogs((prev) => [{ type: 'special', text: 'You are defeated! Proceed to your fate.' }, ...prev]);
       return rolls.map((r) => ({ value: r, tag: 'DEFEAT', variant: 'miss' }));
     }
 
@@ -85,9 +86,12 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
     if (roundRes.mobDmgRes && roundRes.mobDmgRes.appliedTotal > 0) {
       newMsgs.push({ type: 'miss', text: `${activeMob.name} hit Hero for ${roundRes.mobDmgRes.appliedTotal} DMG.` });
     }
+
     if (roundRes.status === 'victory') {
+      setCombatStatus('victory');
       newMsgs.push({ type: 'special', text: `VICTORY! ${activeMob.name} defeated!` });
     } else if (roundRes.status === 'defeat') {
+      setCombatStatus('defeat');
       newMsgs.push({ type: 'special', text: 'DEFEAT! Hero has fallen.' });
     }
 
@@ -132,6 +136,8 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
   };
 
   const mob = engine.ctx.combatState.mob;
+  const isVictorious = combatStatus === 'victory' || mob.isDefeated();
+  const isDefeated = combatStatus === 'defeat' || (!isVictorious && hero.isDefeated());
   const maxAllowedDice = Math.max(1, hero.attack);
 
   return (
@@ -145,15 +151,22 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
           >
             ← RETREAT TO STORY
           </button>
-          {mob.isDefeated() && narrativeContext.victoryPassageId && (
+          {isVictorious && narrativeContext.victoryPassageId && (
             <button
               type="button"
               class="pixel-btn btn-success"
-              onClick={() =>
-                narrativeContext.onReturnToNarrative?.(narrativeContext.victoryPassageId)
-              }
+              onClick={() => narrativeContext.onReturnToNarrative?.(narrativeContext.victoryPassageId)}
             >
-              CONTINUE STORY →
+              CONTINUE STORY (VICTORY)
+            </button>
+          )}
+          {isDefeated && (
+            <button
+              type="button"
+              class="pixel-btn btn-danger"
+              onClick={() => narrativeContext.onReturnToNarrative?.(narrativeContext.defeatPassageId || 'combat_defeat')}
+            >
+              CONTINUE STORY (DEFEAT)
             </button>
           )}
         </div>
@@ -165,6 +178,7 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
           <select
             class="pixel-select"
             value={selectedMobName}
+            disabled={isVictorious || isDefeated}
             onChange={(e) => initMobEncounter((e.target as HTMLSelectElement).value)}
           >
             {BESTIARY.map((b) => (
@@ -183,8 +197,9 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
 
         <StatusBar>
           Status: {engine.ctx.combatState.effects.length > 0
-            ? `[ ${engine.ctx.combatState.effects.map((e) => (e as any).name || 'Effect').join(' | ')} ]`
-            : 'Normal Encounter'}
+            ? `[ ${engine.ctx.combatState.effects.map((e) => (e as any).name || 'Effect').join(' | ')} ]` : isVictorious
+              ? 'Encounter Won' : isDefeated
+                ? 'Encounter Lost' : 'Active Combat'}
         </StatusBar>
       </PixelFrame>
 
@@ -192,10 +207,37 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
       <div class="combat-middle-grid">
         {/* Swaps between Action Roller and Loot Drop based on mob defeat */}
         <PixelFrame
-          title={mob.isDefeated() ? 'LOOT DROP' : 'ACTION ROLLER'}
-          icon={mob.isDefeated() ? 'spark' : 'target'}
+          title={isDefeated ? 'DEFEAT' : isVictorious ? 'LOOT DROP' : 'ACTION ROLLER'}
+          icon={isDefeated ? 'tnt' : isVictorious ? 'spark' : 'target'}
         >
-          {mob.isDefeated() ? (
+          {isDefeated ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <p style={{ color: 'var(--pixel-red)', margin: 0, fontWeight: 'bold' }}>
+                YOU HAVE FALLEN IN BATTLE!
+              </p>
+              <p style={{ fontSize: '13px', margin: 0 }}>
+                {mob.name} has overwhelmed you. Continue to discover your fate.
+              </p>
+              {narrativeContext ? (
+                <button
+                  type="button"
+                  class="pixel-btn btn-danger"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={() =>
+                    narrativeContext.onReturnToNarrative?.(
+                      narrativeContext.defeatPassageId || 'combat_defeat'
+                    )
+                  }
+                >
+                  CONTINUE STORY (FAILURE)
+                </button>
+              ) : (
+                <button type="button" class="pixel-btn" onClick={() => initMobEncounter(mob.name)}>
+                  TRY AGAIN
+                </button>
+              )}
+            </div>
+          ) : isVictorious ? (
             <div>
               <p style={{ fontSize: '12px', margin: '0 0 12px 0' }}>
                 <strong>{mob.name}</strong> was defeated! Roll on the loot table:
@@ -207,6 +249,16 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
                 disabled={lootClaimed}
                 onRoll={handleLootRoll}
               />
+              {narrativeContext?.victoryPassageId && (
+                <button
+                  type="button"
+                  class={`pixel-btn ${lootClaimed ? 'btn-success' : 'btn-active'}`}
+                  style={{ width: '100%', marginTop: '12px', justifyContent: 'center' }}
+                  onClick={() => narrativeContext.onReturnToNarrative?.(narrativeContext.victoryPassageId)}
+                >
+                  {lootClaimed ? 'CONTINUE STORY (VICTORY)' : 'SKIP LOOT & CONTINUE'}
+                </button>
+              )}
             </div>
           ) : (
             <DiceRoller

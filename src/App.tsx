@@ -40,16 +40,12 @@ export function App() {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [targetMobName, setTargetMobName] = useState<string | undefined>(undefined);
   const [pendingMaterial, setPendingMaterial] = useState<TrackedMaterial | null>(null);
-  const [narrativeVictoryPassageId, setNarrativeVictoryPassageId] = useState<string | undefined>(
-    undefined
-  );
+  const [narrativeVictoryPassageId, setNarrativeVictoryPassageId] = useState<string | undefined>(undefined);
+  const [narrativeDefeatPassageId, setNarrativeDefeatPassageId] = useState<string | undefined>(undefined);
 
-  const [storyPassages, setStoryPassages] = useState<Record<string, Passage>>(
-    getInitialStoryPassages
-  );
-  const [isCustomStory, setIsCustomStory] = useState<boolean>(() =>
-    localStorage.getItem(CUSTOM_STORY_STORAGE_KEY) !== null
-  );
+  const [storyPassages, setStoryPassages] = useState<Record<string, Passage>>(getInitialStoryPassages);
+
+  const [isCustomStory, setIsCustomStory] = useState<boolean>(() => localStorage.getItem(CUSTOM_STORY_STORAGE_KEY) !== null);
 
   const handleLoadStory = (jsonStr: string): boolean => {
     try {
@@ -94,17 +90,26 @@ export function App() {
     setTick((t) => t + 1);
   };
 
-  const handleTriggerCombat = (mobName: string, onVictoryPassageId?: string) => {
+  const handleTriggerCombat = (
+    mobName: string,
+    onVictoryPassageId?: string,
+    onDefeatPassageId?: string
+  ) => {
     setTargetMobName(mobName);
     setNarrativeVictoryPassageId(onVictoryPassageId);
+    setNarrativeDefeatPassageId(onDefeatPassageId);
     setActiveView('combat');
   };
 
   const handleReturnToNarrative = (targetPassageId?: string) => {
+    if (hero.isDefeated() || hero.hearts <= 0) {
+      hero.respawn();
+    }
     if (targetPassageId) {
       hero.currentPassageId = targetPassageId;
     }
     setNarrativeVictoryPassageId(undefined);
+    setNarrativeDefeatPassageId(undefined);
     setActiveView('narrative');
     saveState();
   };
@@ -156,13 +161,14 @@ export function App() {
         onOpenOptions={() => setOptionsOpen(true)}
       />
 
-      {/* Navigation (Context-aware in Narrative Mode) */}
       <ModeNavBar
         hero={hero}
         activeView={activeView}
         onSelectView={setActiveView}
         accessibleViews={accessibleViews}
-        combatActive={narrativeVictoryPassageId !== undefined}
+        combatActive={
+          narrativeVictoryPassageId !== undefined || narrativeDefeatPassageId !== undefined
+        }
       />
 
       {/* Narrative Mode Return Banner if currently in an unlocked sub-view */}
@@ -200,6 +206,7 @@ export function App() {
               hero.narrativeMode
                 ? {
                   victoryPassageId: narrativeVictoryPassageId,
+                  defeatPassageId: narrativeDefeatPassageId,
                   onReturnToNarrative: handleReturnToNarrative,
                 }
                 : undefined

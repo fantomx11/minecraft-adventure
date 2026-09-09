@@ -14,7 +14,11 @@ interface NarrativeViewProps {
   passages: Record<string, Passage>;
   onUpdate: () => void;
   onNavigateView: (view: ActiveView) => void;
-  onTriggerCombat: (mobName: string, onVictoryPassageId?: string) => void;
+  onTriggerCombat: (
+    mobName: string,
+    onVictoryPassageId?: string,
+    onDefeatPassageId?: string
+  ) => void;
   onGainMaterial: (mat: TrackedMaterial, amount?: number) => void;
 }
 
@@ -139,15 +143,16 @@ export function NarrativeView({
     }
 
     if (choice.type === 'combat') {
+      const victoryId = choice.onVictoryPassageId || choice.targetPassageId;
+      const defeatId = choice.onDefeatPassageId || 'combat_defeat';
       if (choice.mobTable) {
         const picked = rollOnMobTable(choice.mobTable);
-        onTriggerCombat(picked.mob, choice.onVictoryPassageId);
+        onTriggerCombat(picked.mob, victoryId, defeatId);
       } else if (choice.mob) {
-        onTriggerCombat(choice.mob, choice.onVictoryPassageId);
+        onTriggerCombat(choice.mob, victoryId, defeatId);
       }
       return;
     }
-
     if (choice.type === 'view' && choice.targetView) {
       onNavigateView(choice.targetView);
       return;
@@ -167,7 +172,11 @@ export function NarrativeView({
 
   const handleFightTriggeredMob = (mobName: string) => {
     if (passage.triggerCombat) {
-      onTriggerCombat(mobName, passage.triggerCombat.onVictoryPassageId);
+      onTriggerCombat(
+        mobName,
+        passage.triggerCombat.onVictoryPassageId,
+        passage.triggerCombat.onDefeatPassageId || 'combat_defeat'
+      );
     }
   };
 

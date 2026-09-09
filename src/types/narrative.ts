@@ -27,29 +27,24 @@ export interface PassageChoice {
   text: string;
   type?: ChoiceType;
   targetPassageId?: string;
-
   // Requirements to pick this choice
   requiresItem?: string;
   requiresMaterial?: { material: TrackedMaterial; count: number };
   requiresGrovesCleared?: number;
   requiresMinesCleared?: number;
-
   // Costs deducted when chosen
   consumeMaterial?: { material: TrackedMaterial; count: number };
   consumeItem?: string;
-
-  // For 'view' choice type (unlocks and switches to screen)
+  // For 'view' choice type
   targetView?: 'forest' | 'mining' | 'crafting';
-
   // For 'combat' choice type
   mob?: string;
   mobTable?: MobTableEntry[];
   onVictoryPassageId?: string;
-
+  onDefeatPassageId?: string; // Defeat branch node
   // For 'dice_check' choice type
   diceCheck?: DiceCheckConfig;
-
-  // Direct rewards for choosing this option
+  // Direct rewards
   grantReward?: PassageReward;
 }
 

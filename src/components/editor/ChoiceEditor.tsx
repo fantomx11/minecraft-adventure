@@ -95,20 +95,57 @@ export function ChoiceEditor({
         </div>
 
         {choice.type === 'combat' && (
-          <div>
-            <label style={{ fontSize: '10px' }}>TRIGGER MOB</label>
-            <select
-              class="pixel-select"
-              value={choice.mob || BESTIARY[0].name}
-              onChange={(e) => onChange({ mob: (e.target as HTMLSelectElement).value })}
-            >
-              {BESTIARY.map((b) => (
-                <option key={b.name} value={b.name}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <>
+            <div>
+              <label style={{ fontSize: '10px' }}>TRIGGER MOB</label>
+              <select
+                class="pixel-select"
+                value={choice.mob || BESTIARY[0].name}
+                onChange={(e) => onChange({ mob: (e.target as HTMLSelectElement).value })}
+              >
+                {BESTIARY.map((b) => (
+                  <option key={b.name} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px' }}>SUCCESS PASSAGE (VICTORY)</label>
+              <select
+                class="pixel-select"
+                value={choice.onVictoryPassageId || choice.targetPassageId || ''}
+                onChange={(e) => {
+                  const val = (e.target as HTMLSelectElement).value;
+                  onChange({ onVictoryPassageId: val, targetPassageId: val });
+                }}
+              >
+                <option value="">-- Select Victory Node --</option>
+                {availablePassageIds.map((pId) => (
+                  <option key={pId} value={pId}>
+                    {pId}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: '10px' }}>FAILURE PASSAGE (DEFEAT)</label>
+              <select
+                class="pixel-select"
+                value={choice.onDefeatPassageId || ''}
+                onChange={(e) =>
+                  onChange({ onDefeatPassageId: (e.target as HTMLSelectElement).value || undefined })
+                }
+              >
+                <option value="">-- Select Defeat Node --</option>
+                {availablePassageIds.map((pId) => (
+                  <option key={pId} value={pId}>
+                    {pId}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
         )}
       </div>
     </div>

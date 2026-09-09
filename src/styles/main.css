@@ -636,6 +636,14 @@ body {
   justify-content: space-between;
   padding: 14px 18px;
   line-height: 1.4;
+  font-family: 'MinedCraft Five', monospace;
+}
+
+.pixel-btn.narrative-choice-btn,
+.narrative-choice-btn .choice-text,
+.narrative-choice-btn span {
+  font-family: 'MinedCraft Five', monospace;
+  letter-spacing: 0;
 }
 
 .choice-text {
