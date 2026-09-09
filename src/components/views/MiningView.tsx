@@ -8,12 +8,14 @@ import { DieItem } from '../../types/dice';
 
 interface MiningViewProps {
   hero: Character;
+  mineCleared: number;
   onUpdate: () => void;
   onGainMaterial: (mat: TrackedMaterial, amount?: number) => void;
   onNavigateCombat: (mobName: string) => void;
+  onMineCleared: () => void;
 }
 
-export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat }: MiningViewProps) {
+export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat, onMineCleared, mineCleared }: MiningViewProps) {
   const [depthBonus, setDepthBonus] = useState(0);
   const [message, setMessage] = useState('Standing at the cavern entrance.');
   const [mineCount, setMineCount] = useState(0);
@@ -23,7 +25,7 @@ export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat }:
 
   const handleSurface = () => {
     if (depthBonus > 0 || mineCount > 0) {
-      hero.mineCleared += 1;
+      onMineCleared();
       setDepthBonus(0);
       setMineCount(0);
       setMessage('Returned safely to the surface (+1 Mine Clear). Depth and mining bonus reset.');
@@ -100,7 +102,7 @@ export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat }:
         <p style={{ fontSize: '13px', lineHeight: '1.8' }}>
           Pickaxe: <strong>{pickaxe?.name || 'Bare Hands'}</strong> | Depth Bonus:{' '}
           <strong>+{depthBonus}</strong> | Mine Expeditions Cleared:{' '}
-          <strong>{hero.mineCleared}</strong>
+          <strong>{mineCleared}</strong>
         </p>
 
         <div class="mode-actions-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
