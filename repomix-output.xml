@@ -653,216 +653,6 @@ export function JsonTransferModal({
 }
 </file>
 
-<file path="src/components/editor/MutationListEditor.tsx">
-import type { Mutation } from '../../types/world';
-import { EQUIPMENT_DEFINITIONS, TRACKED_MATERIALS } from '../../data/recipes';
-
-interface MutationListEditorProps {
-  mutations: Mutation[] | undefined;
-  onChange: (updated: Mutation[] | undefined) => void;
-  title?: string;
-  allLocationIds?: string[];
-}
-
-export function MutationListEditor({
-  mutations = [],
-  onChange,
-  title = 'STATE MUTATIONS',
-}: MutationListEditorProps) {
-  const handleAddMutation = (type: 'flag' | 'inventory' | 'location') => {
-    let newMut: Mutation;
-    if (type === 'flag') {
-      newMut = { type: 'flag', flag: 'quest_step', action: 'set', value: 1 };
-    } else if (type === 'inventory') {
-      newMut = { type: 'inventory', itemId: TRACKED_MATERIALS[0], action: 'add', count: 1 };
-    } else {
-      newMut = { type: 'location', locationId: 'poi_id', action: 'discover' };
-    }
-    onChange([...mutations, newMut]);
-  };
-
-  const handleUpdate = (index: number, updated: Mutation) => {
-    const copy = [...mutations];
-    copy[index] = updated;
-    onChange(copy);
-  };
-
-  const handleRemove = (index: number) => {
-    const copy = mutations.filter((_, i) => i !== index);
-    onChange(copy.length > 0 ? copy : undefined);
-  };
-
-  return (
-    <div style={{ background: '#dedede', border: '2px solid #000', padding: '10px', margin: '8px 0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <span style={{ fontSize: '10px', fontWeight: 'bold' }}>
-          {title} ({mutations.length})
-        </span>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          <button
-            type="button"
-            class="pixel-btn btn-success"
-            style={{ fontSize: '9px', padding: '3px 6px' }}
-            onClick={() => handleAddMutation('flag')}
-          >
-            + FLAG
-          </button>
-          <button
-            type="button"
-            class="pixel-btn btn-primary"
-            style={{ fontSize: '9px', padding: '3px 6px' }}
-            onClick={() => handleAddMutation('inventory')}
-          >
-            + ITEM
-          </button>
-          <button
-            type="button"
-            class="pixel-btn btn-active"
-            style={{ fontSize: '9px', padding: '3px 6px' }}
-            onClick={() => handleAddMutation('location')}
-          >
-            + MAP
-          </button>
-        </div>
-      </div>
-
-      {mutations.length === 0 && (
-        <div style={{ fontSize: '10px', color: '#666', fontStyle: 'italic' }}>
-          No mutations attached. (State remains unchanged when triggered).
-        </div>
-      )}
-
-      {mutations.map((mut, idx) => (
-        <div
-          key={idx}
-          style={{
-            background: '#fff',
-            border: '2px solid #000',
-            padding: '8px',
-            marginBottom: '6px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-              #{idx + 1} {mut.type} MUTATION
-            </span>
-            <button
-              type="button"
-              class="pixel-btn btn-danger"
-              style={{ fontSize: '8px', padding: '2px 4px' }}
-              onClick={() => handleRemove(idx)}
-            >
-              REMOVE
-            </button>
-          </div>
-
-          {mut.type === 'flag' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: '6px' }}>
-              <div>
-                <label style={{ fontSize: '8px' }}>FLAG</label>
-                <input
-                  class="pixel-input"
-                  style={{ fontSize: '11px', padding: '4px' }}
-                  value={mut.flag}
-                  onInput={(e) => handleUpdate(idx, { ...mut, flag: (e.target as HTMLInputElement).value })}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '8px' }}>ACTION</label>
-                <select
-                  class="pixel-select"
-                  style={{ fontSize: '11px', padding: '4px' }}
-                  value={mut.action}
-                  onChange={(e) => handleUpdate(idx, { ...mut, action: (e.target as HTMLSelectElement).value as any })}
-                >
-                  <option value="set">Set</option>
-                  <option value="add">Add (+)</option>
-                  <option value="toggle">Toggle</option>
-                  <option value="delete">Delete</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '8px' }}>VALUE</label>
-                <input
-                  class="pixel-input"
-                  style={{ fontSize: '11px', padding: '4px' }}
-                  disabled={mut.action === 'toggle' || mut.action === 'delete'}
-                  value={mut.value !== undefined ? String(mut.value) : ''}
-                  onInput={(e) => {
-                    const raw = (e.target as HTMLInputElement).value;
-                    let val: boolean | number | string = raw;
-                    if (raw === 'true') val = true;
-                    else if (raw === 'false') val = false;
-                    else if (!isNaN(Number(raw)) && raw.trim() !== '') val = Number(raw);
-                    handleUpdate(idx, { ...mut, value: val });
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {mut.type === 'inventory' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '6px' }}>
-              <div>
-                <label style={{ fontSize: '8px' }}>ITEM / MATERIAL</label>
-                <input
-                  class="pixel-input"
-                  style={{ fontSize: '11px', padding: '4px' }}
-                  list="items-list"
-                  value={mut.itemId}
-                  onInput={(e) => handleUpdate(idx, { ...mut, itemId: (e.target as HTMLInputElement).value })}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '8px' }}>ACTION</label>
-                <select
-                  class="pixel-select"
-                  style={{ fontSize: '11px', padding: '4px' }}
-                  value={mut.action}
-                  onChange={(e) => handleUpdate(idx, { ...mut, action: (e.target as HTMLSelectElement).value as any })}
-                >
-                  <option value="add">Add (+)</option>
-                  <option value="remove">Remove (-)</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '8px' }}>COUNT</label>
-                <input
-                  type="number"
-                  min="1"
-                  class="pixel-input"
-                  style={{ fontSize: '11px', padding: '4px' }}
-                  value={mut.count ?? 1}
-                  onInput={(e) => handleUpdate(idx, { ...mut, count: parseInt((e.target as HTMLInputElement).value, 10) || 1 })}
-                />
-              </div>
-            </div>
-          )}
-
-          {mut.type === 'location' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '6px' }}>
-              <div>
-                <label style={{ fontSize: '8px' }}>DISCOVER REGION / POI ID</label>
-                <input
-                  class="pixel-input"
-                  style={{ fontSize: '11px', padding: '4px' }}
-                  value={mut.locationId}
-                  onInput={(e) => handleUpdate(idx, { ...mut, locationId: (e.target as HTMLInputElement).value })}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '8px' }}>ACTION</label>
-                <input class="pixel-input" style={{ fontSize: '11px', padding: '4px' }} value="DISCOVER" disabled />
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-</file>
-
 <file path="src/components/editor/PassageSidebar.tsx">
 // src/components/editor/PassageSidebar.tsx
 import { PixelFrame } from '../ui/PixelFrame';
@@ -1133,30 +923,6 @@ export function PixelFrame({ title, icon, isDark = false, class: className = '',
         {icon && <Icon name={icon} />} {title}
       </div>
       {children}
-    </div>
-  );
-}
-</file>
-
-<file path="src/components/ui/StatBadge.tsx">
-import type { ComponentChildren } from 'preact';
-import { Icon } from './Icon';
-import { IconName } from '../../data/icons';
-
-interface StatBadgeProps {
-  icon: IconName;
-  label?: string;
-  value: ComponentChildren
-}
-
-export function StatBadge({ icon, label, value }: StatBadgeProps) {
-  return (
-    <div class="hud-badge">
-      <Icon name={icon} />
-      <span>
-        {label ? `${label} ` : ''}
-        {value}
-      </span>
     </div>
   );
 }
@@ -2082,6 +1848,216 @@ jobs:
         uses: actions/deploy-pages@v4
 </file>
 
+<file path="src/components/editor/MutationListEditor.tsx">
+import type { Mutation } from '../../types/world';
+import { TRACKED_MATERIALS } from '../../data/recipes';
+
+interface MutationListEditorProps {
+  mutations: Mutation[] | undefined;
+  onChange: (updated: Mutation[] | undefined) => void;
+  title?: string;
+  allLocationIds?: string[];
+}
+
+export function MutationListEditor({
+  mutations = [],
+  onChange,
+  title = 'STATE MUTATIONS',
+}: MutationListEditorProps) {
+  const handleAddMutation = (type: 'flag' | 'inventory' | 'location') => {
+    let newMut: Mutation;
+    if (type === 'flag') {
+      newMut = { type: 'flag', flag: 'quest_step', action: 'set', value: 1 };
+    } else if (type === 'inventory') {
+      newMut = { type: 'inventory', itemId: TRACKED_MATERIALS[0], action: 'add', count: 1 };
+    } else {
+      newMut = { type: 'location', locationId: 'poi_id', action: 'discover' };
+    }
+    onChange([...mutations, newMut]);
+  };
+
+  const handleUpdate = (index: number, updated: Mutation) => {
+    const copy = [...mutations];
+    copy[index] = updated;
+    onChange(copy);
+  };
+
+  const handleRemove = (index: number) => {
+    const copy = mutations.filter((_, i) => i !== index);
+    onChange(copy.length > 0 ? copy : undefined);
+  };
+
+  return (
+    <div style={{ background: '#dedede', border: '2px solid #000', padding: '10px', margin: '8px 0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <span style={{ fontSize: '10px', fontWeight: 'bold' }}>
+          {title} ({mutations.length})
+        </span>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button
+            type="button"
+            class="pixel-btn btn-success"
+            style={{ fontSize: '9px', padding: '3px 6px' }}
+            onClick={() => handleAddMutation('flag')}
+          >
+            + FLAG
+          </button>
+          <button
+            type="button"
+            class="pixel-btn btn-primary"
+            style={{ fontSize: '9px', padding: '3px 6px' }}
+            onClick={() => handleAddMutation('inventory')}
+          >
+            + ITEM
+          </button>
+          <button
+            type="button"
+            class="pixel-btn btn-active"
+            style={{ fontSize: '9px', padding: '3px 6px' }}
+            onClick={() => handleAddMutation('location')}
+          >
+            + MAP
+          </button>
+        </div>
+      </div>
+
+      {mutations.length === 0 && (
+        <div style={{ fontSize: '10px', color: '#666', fontStyle: 'italic' }}>
+          No mutations attached. (State remains unchanged when triggered).
+        </div>
+      )}
+
+      {mutations.map((mut, idx) => (
+        <div
+          key={idx}
+          style={{
+            background: '#fff',
+            border: '2px solid #000',
+            padding: '8px',
+            marginBottom: '6px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <span style={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+              #{idx + 1} {mut.type} MUTATION
+            </span>
+            <button
+              type="button"
+              class="pixel-btn btn-danger"
+              style={{ fontSize: '8px', padding: '2px 4px' }}
+              onClick={() => handleRemove(idx)}
+            >
+              REMOVE
+            </button>
+          </div>
+
+          {mut.type === 'flag' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: '6px' }}>
+              <div>
+                <label style={{ fontSize: '8px' }}>FLAG</label>
+                <input
+                  class="pixel-input"
+                  style={{ fontSize: '11px', padding: '4px' }}
+                  value={mut.flag}
+                  onInput={(e) => handleUpdate(idx, { ...mut, flag: (e.target as HTMLInputElement).value })}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '8px' }}>ACTION</label>
+                <select
+                  class="pixel-select"
+                  style={{ fontSize: '11px', padding: '4px' }}
+                  value={mut.action}
+                  onChange={(e) => handleUpdate(idx, { ...mut, action: (e.target as HTMLSelectElement).value as any })}
+                >
+                  <option value="set">Set</option>
+                  <option value="add">Add (+)</option>
+                  <option value="toggle">Toggle</option>
+                  <option value="delete">Delete</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '8px' }}>VALUE</label>
+                <input
+                  class="pixel-input"
+                  style={{ fontSize: '11px', padding: '4px' }}
+                  disabled={mut.action === 'toggle' || mut.action === 'delete'}
+                  value={mut.value !== undefined ? String(mut.value) : ''}
+                  onInput={(e) => {
+                    const raw = (e.target as HTMLInputElement).value;
+                    let val: boolean | number | string = raw;
+                    if (raw === 'true') val = true;
+                    else if (raw === 'false') val = false;
+                    else if (!isNaN(Number(raw)) && raw.trim() !== '') val = Number(raw);
+                    handleUpdate(idx, { ...mut, value: val });
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {mut.type === 'inventory' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '6px' }}>
+              <div>
+                <label style={{ fontSize: '8px' }}>ITEM / MATERIAL</label>
+                <input
+                  class="pixel-input"
+                  style={{ fontSize: '11px', padding: '4px' }}
+                  list="items-list"
+                  value={mut.itemId}
+                  onInput={(e) => handleUpdate(idx, { ...mut, itemId: (e.target as HTMLInputElement).value })}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '8px' }}>ACTION</label>
+                <select
+                  class="pixel-select"
+                  style={{ fontSize: '11px', padding: '4px' }}
+                  value={mut.action}
+                  onChange={(e) => handleUpdate(idx, { ...mut, action: (e.target as HTMLSelectElement).value as any })}
+                >
+                  <option value="add">Add (+)</option>
+                  <option value="remove">Remove (-)</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '8px' }}>COUNT</label>
+                <input
+                  type="number"
+                  min="1"
+                  class="pixel-input"
+                  style={{ fontSize: '11px', padding: '4px' }}
+                  value={mut.count ?? 1}
+                  onInput={(e) => handleUpdate(idx, { ...mut, count: parseInt((e.target as HTMLInputElement).value, 10) || 1 })}
+                />
+              </div>
+            </div>
+          )}
+
+          {mut.type === 'location' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '6px' }}>
+              <div>
+                <label style={{ fontSize: '8px' }}>DISCOVER REGION / POI ID</label>
+                <input
+                  class="pixel-input"
+                  style={{ fontSize: '11px', padding: '4px' }}
+                  value={mut.locationId}
+                  onInput={(e) => handleUpdate(idx, { ...mut, locationId: (e.target as HTMLInputElement).value })}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '8px' }}>ACTION</label>
+                <input class="pixel-input" style={{ fontSize: '11px', padding: '4px' }} value="DISCOVER" disabled />
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+</file>
+
 <file path="src/components/editor/PassageForm.tsx">
 import { PixelFrame } from '../ui/PixelFrame';
 import { IconName, ICONS } from '../../data/icons';
@@ -2591,6 +2567,30 @@ export function RecipeCard({ recipe, canAfford, isOwned = false, onCraft }: Reci
 }
 </file>
 
+<file path="src/components/ui/StatBadge.tsx">
+import type { ComponentChildren } from 'preact';
+import { Icon } from './Icon';
+import { IconName } from '../../data/icons';
+
+interface StatBadgeProps {
+  icon: IconName;
+  label?: string;
+  value: ComponentChildren;
+}
+
+export function StatBadge({ icon, label, value }: StatBadgeProps) {
+  return (
+    <div class="hud-badge">
+      <Icon name={icon} />
+      <span>
+        {label ? `${label} ` : ''}
+        {value}
+      </span>
+    </div>
+  );
+}
+</file>
+
 <file path="src/components/ui/StatField.tsx">
 import { IconName } from '../../data/icons';
 import { Icon } from './Icon';
@@ -2713,247 +2713,6 @@ export function CraftingView({ hero, onUpdate }: CraftingViewProps) {
         </div>
 
         <StatusBar marginTop="16px">{message}</StatusBar>
-      </PixelFrame>
-    </section>
-  );
-}
-</file>
-
-<file path="src/components/views/PoiNodeView.tsx">
-import type { Character } from '../../models/Character';
-import type { OpenWorldProgression, ActiveView, GameProgressionState } from '../../types/game';
-import type { TrackedMaterial } from '../../types/inventory';
-import type { POINode, PointOfInterest, POINodeExit, POIQuestHook, Region } from '../../types/world';
-import { REGIONS } from '../../data/regions';
-import { PixelFrame } from '../ui/PixelFrame';
-import { StatusBar } from '../ui/StatusBar';
-import { Icon } from '../ui/Icon';
-import { evaluateCondition, applyMutations, EvaluationContext } from '../../engine/evaluator';
-
-interface PoiNodeViewProps {
-  hero: Character;
-  state: OpenWorldProgression;
-  regions: Record<string, Region>;
-  onUpdate: () => void;
-  onNavigateView: (view: ActiveView) => void;
-  onTriggerCombat: (mobName: string) => void;
-  onTriggerPassage: (passageId: string) => void;
-  onGainMaterial: (mat: TrackedMaterial, amt: number) => void;
-  onExitToMap: () => void;
-}
-
-export function PoiNodeView({
-  hero,
-  state,
-  regions,
-  onUpdate,
-  onNavigateView,
-  onTriggerCombat,
-  onTriggerPassage,
-  onGainMaterial,
-  onExitToMap,
-}: PoiNodeViewProps) {
-  const currentRegion = regions[state.currentRegionId] || REGIONS[state.currentRegionId] || Object.values(regions)[0];
-  const currentPoi: PointOfInterest | undefined = currentRegion.pointsOfInterest.find(
-    (p) => p.id === state.currentPoiId
-  );
-  const activeNodeId = state.currentNodeId || currentPoi?.entryNodeId || '';
-  const currentNode: POINode | undefined = currentPoi?.nodes[activeNodeId];
-
-  if (!currentPoi || !currentNode) {
-    return (
-      <section class="view-panel active">
-        <PixelFrame title="UNKNOWN LOCATION" icon="target">
-          <p>Location interior could not be found.</p>
-          <button type="button" class="pixel-btn btn-primary" onClick={onExitToMap}>
-            RETURN TO MAP
-          </button>
-        </PixelFrame>
-      </section>
-    );
-  }
-
-  const evalCtx: EvaluationContext = {
-    hero,
-    game: { openWorld: state } as GameProgressionState,
-    onGainMaterial,
-  };
-
-  const checkExitRequirement = (exit: POINodeExit): { allowed: boolean; reason?: string } => {
-    if (exit.condition && !evaluateCondition(exit.condition, evalCtx)) {
-      return { allowed: false, reason: exit.lockedReason || 'Path is sealed' };
-    }
-    return { allowed: true };
-  };
-
-  const handleExitClick = (exit: POINodeExit) => {
-    const { allowed } = checkExitRequirement(exit);
-    if (!allowed) return;
-
-    if (exit.mutations) {
-      applyMutations(exit.mutations, evalCtx);
-      onUpdate();
-    }
-
-    if (exit.exitToRegion) {
-      onExitToMap();
-      return;
-    }
-
-    if (exit.targetNodeId) {
-      state.currentNodeId = exit.targetNodeId;
-      onUpdate();
-    }
-  };
-
-  const checkQuestHookAllowed = (qh: POIQuestHook): { allowed: boolean; reason?: string } => {
-    if (qh.condition && !evaluateCondition(qh.condition, evalCtx)) {
-      return { allowed: false, reason: qh.lockedReason || 'Locked' };
-    }
-    return { allowed: true };
-  };
-
-  const handleTriggerQuestHook = (qh: POIQuestHook) => {
-    const { allowed } = checkQuestHookAllowed(qh);
-    if (!allowed) return;
-
-    if (qh.mutations) {
-      applyMutations(qh.mutations, evalCtx);
-      onUpdate();
-    }
-    onTriggerPassage(qh.passageId);
-  };
-
-  const handleAction = (action: typeof currentNode.actions[0]) => {
-    if (action.type === 'combat' && action.mobName) {
-      onTriggerCombat(action.mobName);
-      return;
-    }
-    if (action.type === 'view' && action.view) {
-      onNavigateView(action.view);
-      return;
-    }
-    if (action.type === 'gather' && action.resourceGain) {
-      onGainMaterial(action.resourceGain.material, action.resourceGain.count);
-      return;
-    }
-    if (action.type === 'rest') {
-      hero.changeHealth(5);
-      onUpdate();
-    }
-  };
-
-  const renderedHooks = currentNode.questHooks.filter((qh) => {
-    const { allowed } = checkQuestHookAllowed(qh);
-    const behavior = qh.behavior || 'hide';
-    return allowed || behavior !== 'hide';
-  });
-
-  const renderedExits = currentNode.exits.filter((ex) => {
-    const { allowed } = checkExitRequirement(ex);
-    const behavior = ex.behavior || 'disable';
-    return allowed || behavior !== 'hide';
-  });
-
-  return (
-    <section class="view-panel active">
-      <PixelFrame title={`${currentPoi.name.toUpperCase()} - ${currentNode.title.toUpperCase()}`} icon="target">
-        <p class="narrative-prose">{currentNode.description}</p>
-
-        {currentNode.accessibleViews && currentNode.accessibleViews.length > 0 && (
-          <div style={{ background: '#eee', border: '3px solid #000', padding: '14px', marginBottom: '16px' }}>
-            <span class="narrative-section-tag">WORKSTATIONS & STATIONS</span>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-              {currentNode.accessibleViews.includes('crafting') && (
-                <button type="button" class="pixel-btn btn-active" onClick={() => onNavigateView('crafting')}>
-                  <Icon name="crafting" /> CRAFTING BENCH
-                </button>
-              )}
-              {currentNode.accessibleViews.includes('mining') && (
-                <button type="button" class="pixel-btn btn-primary" onClick={() => onNavigateView('mining')}>
-                  <Icon name="pickaxe" /> EXCAVATE MINES
-                </button>
-              )}
-              {currentNode.accessibleViews.includes('forest') && (
-                <button type="button" class="pixel-btn btn-success" onClick={() => onNavigateView('forest')}>
-                  <Icon name="tree" /> FORAGE GROVES
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {currentNode.actions.length > 0 && (
-          <div style={{ marginBottom: '16px' }}>
-            <span class="narrative-section-tag">AVAILABLE ACTIONS</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-              {currentNode.actions.map((act) => (
-                <button
-                  key={act.id}
-                  type="button"
-                  class={`pixel-btn ${act.type === 'combat' ? 'btn-danger' : act.type === 'rest' ? 'btn-success' : ''}`}
-                  onClick={() => handleAction(act)}
-                >
-                  {act.type === 'combat' && <Icon name="sword" />}
-                  {act.type === 'rest' && <Icon name="bed" />}
-                  {act.type === 'gather' && <Icon name="spark" />}
-                  {act.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {renderedHooks.length > 0 && (
-          <div style={{ marginBottom: '16px' }}>
-            <span class="narrative-section-tag">QUEST HOOKS & DIALOGUE</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-              {renderedHooks.map((qh) => {
-                const { allowed, reason } = checkQuestHookAllowed(qh);
-                return (
-                  <button
-                    key={qh.id}
-                    type="button"
-                    class={`pixel-btn narrative-choice-btn ${allowed ? 'btn-active' : 'choice-locked'}`}
-                    disabled={!allowed}
-                    onClick={() => handleTriggerQuestHook(qh)}
-                  >
-                    <span class="choice-text">
-                      <Icon name="book" /> {qh.label}
-                    </span>
-                    {!allowed && reason && <span class="choice-badge badge-locked">[{reason}]</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <div>
-          <span class="narrative-section-tag">PATHS & EXITS</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-            {renderedExits.map((ex, idx) => {
-              const { allowed, reason } = checkExitRequirement(ex);
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  class={`pixel-btn ${!allowed ? 'choice-locked' : ''}`}
-                  disabled={!allowed}
-                  onClick={() => handleExitClick(ex)}
-                  style={{ justifyContent: 'space-between' }}
-                >
-                  <span>{ex.label}</span>
-                  {!allowed && reason && <span class="choice-badge badge-locked">[{reason}]</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <StatusBar marginTop="16px">
-          Location: {currentPoi.name} | Room: {currentNode.title}
-        </StatusBar>
       </PixelFrame>
     </section>
   );
@@ -3481,236 +3240,6 @@ export class StandardTravelResolver implements TravelResolver {
 }
 </file>
 
-<file path="src/models/Entity.ts">
-import { Observable } from './Observable';
-import type { DamageInstance, DamageResult, CombatContext } from '../types/combat';
-
-export interface EntityData {
-  name: string;
-  hearts: number;
-  maxHearts: number;
-}
-
-export abstract class Entity extends Observable {
-  #data: EntityData;
-
-  constructor(name: string, maxHearts: number, hearts?: number) {
-    super();
-    this.#data = this.createReactiveStore({
-      name,
-      maxHearts,
-      hearts: hearts ?? maxHearts
-    });
-  }
-
-  abstract readonly armor: number;
-
-  // --- Core Accessors ---
-  public get name(): string {
-    return this.#data.name;
-  }
-  public set name(val: string) {
-    this.#data.name = val;
-  }
-
-  public get maxHearts(): number {
-    return this.#data.maxHearts;
-  }
-  public set maxHearts(val: number) {
-    this.#data.maxHearts = Math.max(1, val);
-  }
-
-  public get hearts(): number {
-    return this.#data.hearts;
-  }
-  public set hearts(val: number) {
-    this.#data.hearts = Math.max(0, Math.min(this.#data.maxHearts, val));
-  }
-
-  public get health(): number {
-    return this.hearts;
-  }
-  public set health(val: number) {
-    this.hearts = val;
-  }
-
-  public get isDead(): boolean {
-    return this.hearts <= 0;
-  }
-
-  public get isAlive(): boolean {
-    return this.hearts > 0;
-  }
-
-  // --- Domain Logic ---
-  public changeHealth(delta: number): void {
-    this.hearts += delta;
-  }
-
-  public resetHealth(): void {
-    this.hearts = this.maxHearts;
-  }
-
-  public takeDamage(instances: DamageInstance[], ctx?: CombatContext): DamageResult {
-    let appliedTotal = 0;
-    const details: string[] = [];
-
-    for (const inst of instances) {
-      let amt = inst.amount;
-      if (inst.appliesArmor && this.armor > 0 && !ctx?.combatState?.ignoreArmor) {
-        amt = Math.max(0, amt - this.armor);
-      }
-      this.hearts -= amt;
-      appliedTotal += amt;
-      details.push(`${inst.source}: ${amt} DMG`);
-    }
-
-    return { appliedTotal, details };
-  }
-
-  public isDefeated(): boolean {
-    return this.isDead;
-  }
-
-  public toJSON(): EntityData {
-    return {
-      name: this.name,
-      hearts: this.hearts,
-      maxHearts: this.maxHearts,
-    };
-  }
-}
-</file>
-
-<file path="src/models/GameSave.ts">
-import type { GameSaveData, GameProgressionState } from '../types/game';
-import { SerializedCharacter } from "./Character";
-
-interface GameSaveBase<T extends string, U> {
-  character: SerializedCharacter;
-  type: T;
-  data: U;
-}
-
-export interface SandboxData {
-  forestCleared: number;
-  mineCleared: number;
-}
-
-export type SandboxGameSave = GameSaveBase<"sandbox", SandboxData>;
-
-export interface NarrativeData {
-  currentPassageId: string;
-  visitedPassages: string[];
-}
-
-export type NarrativeGameSave = GameSaveBase<"narrative", NarrativeData>;
-
-export interface OpenWorldData {
-currentRegionId: string;
-  currentPoiId: string | null;
-  currentNodeId: string | null;
-  discoveredRegions: string[];
-  discoveredPoiIds: string[];
-  questFlags: Record<string, any>;
-  counters: Record<string, number>;
-  customData: Record<string, any>;
-}
-
-export type OpenWorldGameSave = GameSaveBase<"open_world", OpenWorldData>;
-
-export type GameSave = SandboxGameSave | NarrativeGameSave | OpenWorldGameSave
-
-export function initGameSave<T extends GameSave["type"]>(
-  type: T,
-  character: SerializedCharacter
-): Extract<GameSave, { type: T }> {
-  return {
-    type,
-    character,
-    data: DATA_FACTORIES[type](),
-  } as Extract<GameSave, { type: T }>;
-}
-
-const DATA_FACTORIES = {
-  sandbox: (): SandboxData => ({
-    forestCleared: 0,
-    mineCleared: 0,
-  }),
-  narrative: (): NarrativeData => ({
-    currentPassageId: "start",
-    visitedPassages: [],
-  }),
-  open_world: (): OpenWorldData => ({
-    currentRegionId: "plains_settlement",
-    currentPoiId: null,
-    currentNodeId: null,
-    discoveredRegions: ["plains_settlement"],
-    discoveredPoiIds: [],
-    questFlags: {},
-    counters: { travelSteps: 0, trekBonus: 0 },
-    customData: {},
-  }),
-} as const;
-
-export function migrateSaveData(raw: any): GameSaveData {
-  const defaultProgression: GameProgressionState = {
-    mode: 'open_world',
-    activeView: 'world_map',
-    sandbox: { forestCleared: 0, mineCleared: 0 },
-    narrative: { currentPassageId: 'start', visitedPassages: [] },
-    openWorld: {
-      currentRegionId: 'plains_settlement',
-      currentPoiId: null,
-      currentNodeId: null,
-      discoveredRegions: ['plains_settlement'],
-      discoveredPoiIds: [],
-      questFlags: {},
-      counters: { travelSteps: 0, trekBonus: 0 },
-      customData: {},
-    },
-  };
-
-  if (!raw || typeof raw !== 'object') {
-    return {
-      version: 2,
-      character: {
-        name: 'Steve',
-        health: 20,
-        restarts: 0,
-        equipmentInventoryIds: ['Wooden Pickaxe'],
-        equipped: { weapon: null, armor: null, pickaxe: 'Wooden Pickaxe', key: null },
-        materials: {
-          Wood: 0, Stone: 0, Iron: 0, Coal: 0, Diamond: 0,
-          Leather: 0, String: 0, Wheat: 0, Gunpowder: 0, Slimeball: 0, Fish: 0,
-        },
-        materialRule: 'total',
-      },
-      game: defaultProgression,
-    };
-  }
-
-  return {
-    version: 2,
-    character: raw.character || raw,
-    game: raw.game
-      ? {
-          ...defaultProgression,
-          ...raw.game,
-          openWorld: {
-            ...defaultProgression.openWorld,
-            ...(raw.game.openWorld || {}),
-            counters: {
-              ...defaultProgression.openWorld.counters,
-              ...(raw.game.openWorld?.counters || {}),
-            },
-          },
-        }
-      : defaultProgression,
-  };
-}
-</file>
-
 <file path="src/types/combat.ts">
 import type { Entity } from '../models/Entity';
 import type { Character } from '../models/Character';
@@ -3776,57 +3305,6 @@ export interface CombatLifecycleHooks {
   onRoundEnd?(ctx: CombatContext): void;
   onDeath?(ctx: CombatContext): void;
   onCombatEnd?(ctx: CombatContext): void;
-}
-</file>
-
-<file path="src/types/controller.ts">
-import type { Character } from '../models/Character';
-import type { GameProgressionState, ActiveView, GameModeId } from './game';
-import type { Passage } from './narrative';
-import type { TrackedMaterial } from './inventory';
-import { Region } from './world';
-
-export interface ReturnBannerDescriptor {
-  label: string;
-  action: () => void;
-}
-
-export interface CombatTriggerPayload {
-  mobName: string;
-  victoryPassageId?: string;
-  defeatPassageId?: string;
-}
-
-export interface EngineContext {
-  hero: Character;
-  game: GameProgressionState;
-  passages: Record<string, Passage>;
-  regions: Record<string, Region>; // Added
-  saveState: () => void;
-  setActiveView: (view: ActiveView) => void;
-  setPendingMaterial: (mat: TrackedMaterial | null) => void;
-}
-
-export interface GameModeController {
-  readonly id: GameModeId;
-  readonly label: string;
-  readonly defaultView: ActiveView;
-  readonly allowInventoryEditing: boolean;
-
-  getAccessibleViews(ctx: EngineContext): ActiveView[];
-  canNavigateToView(targetView: ActiveView, ctx: EngineContext): boolean;
-  getReturnBanner(ctx: EngineContext): ReturnBannerDescriptor | null;
-
-  onActivityCleared?(type: 'forest' | 'mining', ctx: EngineContext): void;
-  initiateCombat(payload: CombatTriggerPayload, ctx: EngineContext): void;
-  resolveCombatExit(
-    outcome: 'victory' | 'defeat',
-    ctx: EngineContext,
-    runtimeContext?: Record<string, any>
-  ): void;
-
-  handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void;
-  handleHeroDefeated(ctx: EngineContext): void;
 }
 </file>
 
@@ -5287,6 +4765,256 @@ export function ForestView({ onUpdate, onGainMaterial, onNavigateCombat, onGrove
 }
 </file>
 
+<file path="src/components/views/PoiNodeView.tsx">
+import type { Character } from '../../models/Character';
+import type { OpenWorldProgression, ActiveView, GameProgressionState } from '../../types/game';
+import type { TrackedMaterial } from '../../types/inventory';
+import type { POINode, PointOfInterest, POINodeExit, POIQuestHook, Region } from '../../types/world';
+import { REGIONS } from '../../data/regions';
+import { PixelFrame } from '../ui/PixelFrame';
+import { StatusBar } from '../ui/StatusBar';
+import { Icon } from '../ui/Icon';
+import { evaluateCondition, applyMutations, EvaluationContext } from '../../engine/evaluator';
+import { useObservable } from '../../hooks/useObservable';
+
+interface PoiNodeViewProps {
+  hero: Character;
+  state: OpenWorldProgression;
+  regions: Record<string, Region>;
+  onUpdate: () => void;
+  onNavigateView: (view: ActiveView) => void;
+  onTriggerCombat: (mobName: string) => void;
+  onTriggerPassage: (passageId: string) => void;
+  onGainMaterial: (mat: TrackedMaterial, amt: number) => void;
+  onExitToMap: () => void;
+  game?: GameProgressionState;
+}
+
+export function PoiNodeView({
+  hero,
+  state,
+  regions,
+  onUpdate,
+  onNavigateView,
+  onTriggerCombat,
+  onTriggerPassage,
+  onGainMaterial,
+  onExitToMap,
+  game,
+}: PoiNodeViewProps) {
+  useObservable(hero);
+
+  const currentRegion = regions[state.currentRegionId] || REGIONS[state.currentRegionId] || Object.values(regions)[0];
+  const currentPoi: PointOfInterest | undefined = currentRegion.pointsOfInterest.find(
+    (p) => p.id === state.currentPoiId
+  );
+  const activeNodeId = state.currentNodeId || currentPoi?.entryNodeId || '';
+  const currentNode: POINode | undefined = currentPoi?.nodes[activeNodeId];
+
+  if (!currentPoi || !currentNode) {
+    return (
+      <section class="view-panel active">
+        <PixelFrame title="UNKNOWN LOCATION" icon="target">
+          <p>Location interior could not be found.</p>
+          <button type="button" class="pixel-btn btn-primary" onClick={onExitToMap}>
+            RETURN TO MAP
+          </button>
+        </PixelFrame>
+      </section>
+    );
+  }
+
+  const evalCtx: EvaluationContext = {
+    hero,
+    game: game || ({
+      openWorld: state,
+      narrative: { visitedPassages: [], currentPassageId: '' },
+      sandbox: { forestCleared: 0, mineCleared: 0 },
+    } as any),
+    onGainMaterial,
+  };
+
+  const checkExitRequirement = (exit: POINodeExit): { allowed: boolean; reason?: string } => {
+    if (exit.condition && !evaluateCondition(exit.condition, evalCtx)) {
+      return { allowed: false, reason: exit.lockedReason || 'Path is sealed' };
+    }
+    return { allowed: true };
+  };
+
+  const handleExitClick = (exit: POINodeExit) => {
+    const { allowed } = checkExitRequirement(exit);
+    if (!allowed) return;
+
+    if (exit.mutations) {
+      applyMutations(exit.mutations, evalCtx);
+      onUpdate();
+    }
+
+    if (exit.exitToRegion) {
+      onExitToMap();
+      return;
+    }
+
+    if (exit.targetNodeId) {
+      state.currentNodeId = exit.targetNodeId;
+      onUpdate();
+    }
+  };
+
+  const checkQuestHookAllowed = (qh: POIQuestHook): { allowed: boolean; reason?: string } => {
+    if (qh.condition && !evaluateCondition(qh.condition, evalCtx)) {
+      return { allowed: false, reason: qh.lockedReason || 'Locked' };
+    }
+    return { allowed: true };
+  };
+
+  const handleTriggerQuestHook = (qh: POIQuestHook) => {
+    const { allowed } = checkQuestHookAllowed(qh);
+    if (!allowed) return;
+
+    if (qh.mutations) {
+      applyMutations(qh.mutations, evalCtx);
+      onUpdate();
+    }
+    onTriggerPassage(qh.passageId);
+  };
+
+  const handleAction = (action: typeof currentNode.actions[0]) => {
+    if (action.type === 'combat' && action.mobName) {
+      onTriggerCombat(action.mobName);
+      return;
+    }
+    if (action.type === 'view' && action.view) {
+      onNavigateView(action.view);
+      return;
+    }
+    if (action.type === 'gather' && action.resourceGain) {
+      onGainMaterial(action.resourceGain.material, action.resourceGain.count);
+      return;
+    }
+    if (action.type === 'rest') {
+      hero.changeHealth(5);
+      onUpdate();
+    }
+  };
+
+  const renderedHooks = currentNode.questHooks.filter((qh) => {
+    const { allowed } = checkQuestHookAllowed(qh);
+    const behavior = qh.behavior || 'hide';
+    return allowed || behavior !== 'hide';
+  });
+
+  const renderedExits = currentNode.exits.filter((ex) => {
+    const { allowed } = checkExitRequirement(ex);
+    const behavior = ex.behavior || 'disable';
+    return allowed || behavior !== 'hide';
+  });
+
+  return (
+    <section class="view-panel active">
+      <PixelFrame title={`${currentPoi.name.toUpperCase()} - ${currentNode.title.toUpperCase()}`} icon="target">
+        <p class="narrative-prose">{currentNode.description}</p>
+
+        {currentNode.accessibleViews && currentNode.accessibleViews.length > 0 && (
+          <div style={{ background: '#eee', border: '3px solid #000', padding: '14px', marginBottom: '16px' }}>
+            <span class="narrative-section-tag">WORKSTATIONS & STATIONS</span>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+              {currentNode.accessibleViews.includes('crafting') && (
+                <button type="button" class="pixel-btn btn-active" onClick={() => onNavigateView('crafting')}>
+                  <Icon name="crafting" /> CRAFTING BENCH
+                </button>
+              )}
+              {currentNode.accessibleViews.includes('mining') && (
+                <button type="button" class="pixel-btn btn-primary" onClick={() => onNavigateView('mining')}>
+                  <Icon name="pickaxe" /> EXCAVATE MINES
+                </button>
+              )}
+              {currentNode.accessibleViews.includes('forest') && (
+                <button type="button" class="pixel-btn btn-success" onClick={() => onNavigateView('forest')}>
+                  <Icon name="tree" /> FORAGE GROVES
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {currentNode.actions.length > 0 && (
+          <div style={{ marginBottom: '16px' }}>
+            <span class="narrative-section-tag">AVAILABLE ACTIONS</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              {currentNode.actions.map((act) => (
+                <button
+                  key={act.id}
+                  type="button"
+                  class={`pixel-btn ${act.type === 'combat' ? 'btn-danger' : act.type === 'rest' ? 'btn-success' : ''}`}
+                  onClick={() => handleAction(act)}
+                >
+                  {act.type === 'combat' && <Icon name="sword" />}
+                  {act.type === 'rest' && <Icon name="bed" />}
+                  {act.type === 'gather' && <Icon name="spark" />}
+                  {act.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {renderedHooks.length > 0 && (
+          <div style={{ marginBottom: '16px' }}>
+            <span class="narrative-section-tag">QUEST HOOKS & DIALOGUE</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              {renderedHooks.map((qh) => {
+                const { allowed, reason } = checkQuestHookAllowed(qh);
+                return (
+                  <button
+                    key={qh.id}
+                    type="button"
+                    class={`pixel-btn narrative-choice-btn ${allowed ? 'btn-active' : 'choice-locked'}`}
+                    disabled={!allowed}
+                    onClick={() => handleTriggerQuestHook(qh)}
+                  >
+                    <span class="choice-text">
+                      <Icon name="book" /> {qh.label}
+                    </span>
+                    {!allowed && reason && <span class="choice-badge badge-locked">[{reason}]</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <span class="narrative-section-tag">PATHS & EXITS</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+            {renderedExits.map((ex, idx) => {
+              const { allowed, reason } = checkExitRequirement(ex);
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  class={`pixel-btn ${!allowed ? 'choice-locked' : ''}`}
+                  disabled={!allowed}
+                  onClick={() => handleExitClick(ex)}
+                  style={{ justifyContent: 'space-between' }}
+                >
+                  <span>{ex.label}</span>
+                  {!allowed && reason && <span class="choice-badge badge-locked">[{reason}]</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <StatusBar marginTop="16px">
+          Location: {currentPoi.name} | Room: {currentNode.title}
+        </StatusBar>
+      </PixelFrame>
+    </section>
+  );
+}
+</file>
+
 <file path="src/data/bestiary.ts">
 import type { MobConfig } from '../models/Mob';
 import type { CombatContext } from '../types/combat';
@@ -6635,6 +6363,295 @@ export function getInitialStoryPassages(): Record<string, Passage> {
     }
   }
   return STORY_PASSAGES;
+}
+</file>
+
+<file path="src/models/Entity.ts">
+import { Observable } from './Observable';
+import type { DamageInstance, DamageResult, CombatContext } from '../types/combat';
+
+export interface EntityData {
+  name: string;
+  hearts: number;
+  maxHearts: number;
+  health?: number;
+}
+
+export abstract class Entity extends Observable {
+  #data: EntityData;
+
+  constructor(name: string, maxHearts: number, hearts?: number) {
+    super();
+    this.#data = this.createReactiveStore({
+      name,
+      maxHearts,
+      hearts: hearts ?? maxHearts,
+    });
+  }
+
+  abstract readonly armor: number;
+
+  // --- Core Accessors ---
+  public get name(): string {
+    return this.#data.name;
+  }
+  public set name(val: string) {
+    this.#data.name = val;
+  }
+
+  public get maxHearts(): number {
+    return this.#data.maxHearts;
+  }
+  public set maxHearts(val: number) {
+    this.#data.maxHearts = Math.max(1, val);
+  }
+
+  public get hearts(): number {
+    return this.#data.hearts;
+  }
+  public set hearts(val: number) {
+    this.#data.hearts = Math.max(0, Math.min(this.#data.maxHearts, val));
+  }
+
+  public get health(): number {
+    return this.hearts;
+  }
+  public set health(val: number) {
+    this.hearts = val;
+  }
+
+  public setHealth(val: number): void {
+    this.hearts = val;
+  }
+
+  public get isDead(): boolean {
+    return this.hearts <= 0;
+  }
+
+  public get isAlive(): boolean {
+    return this.hearts > 0;
+  }
+
+  public isDefeated(): boolean {
+    return this.isDead;
+  }
+
+  // --- Domain Logic ---
+  public changeHealth(delta: number): void {
+    this.hearts += delta;
+  }
+
+  public resetHealth(): void {
+    this.hearts = this.maxHearts;
+  }
+
+  public takeDamage(instances: DamageInstance[], ctx?: CombatContext): DamageResult {
+    let appliedTotal = 0;
+    const details: string[] = [];
+
+    for (const inst of instances) {
+      let amt = inst.amount;
+      if (inst.appliesArmor && this.armor > 0 && !ctx?.combatState?.ignoreArmor) {
+        amt = Math.max(0, amt - this.armor);
+      }
+      this.hearts -= amt;
+      appliedTotal += amt;
+      details.push(`${inst.source}: ${amt} DMG`);
+    }
+
+    return { appliedTotal, details };
+  }
+
+  public toJSON(): EntityData {
+    return {
+      name: this.name,
+      hearts: this.hearts,
+      maxHearts: this.maxHearts,
+      health: this.hearts,
+    };
+  }
+}
+</file>
+
+<file path="src/models/GameSave.ts">
+import type { GameSaveData, GameProgressionState } from '../types/game';
+import type { SerializedCharacter } from "./Character";
+
+interface GameSaveBase<T extends string, U> {
+  character: SerializedCharacter;
+  type: T;
+  data: U;
+}
+
+export interface SandboxData {
+  forestCleared: number;
+  mineCleared: number;
+}
+
+export type SandboxGameSave = GameSaveBase<"sandbox", SandboxData>;
+
+export interface NarrativeData {
+  currentPassageId: string;
+  visitedPassages: string[];
+}
+
+export type NarrativeGameSave = GameSaveBase<"narrative", NarrativeData>;
+
+export interface OpenWorldData {
+  currentRegionId: string;
+  currentPoiId: string | null;
+  currentNodeId: string | null;
+  discoveredRegions: string[];
+  discoveredPoiIds: string[];
+  questFlags: Record<string, any>;
+  counters: Record<string, number>;
+  customData: Record<string, any>;
+}
+
+export type OpenWorldGameSave = GameSaveBase<"open_world", OpenWorldData>;
+
+export type GameSave = SandboxGameSave | NarrativeGameSave | OpenWorldGameSave;
+
+export function initGameSave<T extends GameSave["type"]>(
+  type: T,
+  character: SerializedCharacter
+): Extract<GameSave, { type: T }> {
+  return {
+    type,
+    character,
+    data: DATA_FACTORIES[type](),
+  } as Extract<GameSave, { type: T }>;
+}
+
+const DATA_FACTORIES = {
+  sandbox: (): SandboxData => ({
+    forestCleared: 0,
+    mineCleared: 0,
+  }),
+  narrative: (): NarrativeData => ({
+    currentPassageId: "start",
+    visitedPassages: [],
+  }),
+  open_world: (): OpenWorldData => ({
+    currentRegionId: "plains_settlement",
+    currentPoiId: null,
+    currentNodeId: null,
+    discoveredRegions: ["plains_settlement"],
+    discoveredPoiIds: [],
+    questFlags: {},
+    counters: { travelSteps: 0, trekBonus: 0 },
+    customData: {},
+  }),
+} as const;
+
+export function migrateSaveData(raw: any): GameSaveData {
+  const defaultProgression: GameProgressionState = {
+    mode: 'open_world',
+    activeView: 'world_map',
+    sandbox: { forestCleared: 0, mineCleared: 0 },
+    narrative: { currentPassageId: 'start', visitedPassages: [] },
+    openWorld: {
+      currentRegionId: 'plains_settlement',
+      currentPoiId: null,
+      currentNodeId: null,
+      discoveredRegions: ['plains_settlement'],
+      discoveredPoiIds: [],
+      questFlags: {},
+      counters: { travelSteps: 0, trekBonus: 0 },
+      customData: {},
+    },
+  };
+
+  if (!raw || typeof raw !== 'object') {
+    return {
+      version: 2,
+      character: {
+        name: 'Steve',
+        hearts: 20,
+        maxHearts: 20,
+        health: 20,
+        restarts: 0,
+        equipmentInventoryIds: ['Wooden Pickaxe'],
+        equipped: { weapon: null, armor: null, pickaxe: 'Wooden Pickaxe', key: null },
+        materials: {
+          Wood: 0, Stone: 0, Iron: 0, Coal: 0, Diamond: 0,
+          Leather: 0, String: 0, Wheat: 0, Gunpowder: 0, Slimeball: 0, Fish: 0,
+        },
+        materialRule: 'total',
+      },
+      game: defaultProgression,
+    };
+  }
+
+  return {
+    version: 2,
+    character: raw.character || raw,
+    game: raw.game
+      ? {
+          ...defaultProgression,
+          ...raw.game,
+          openWorld: {
+            ...defaultProgression.openWorld,
+            ...(raw.game.openWorld || {}),
+            counters: {
+              ...defaultProgression.openWorld.counters,
+              ...(raw.game.openWorld?.counters || {}),
+            },
+          },
+        }
+      : defaultProgression,
+  };
+}
+</file>
+
+<file path="src/types/controller.ts">
+import type { Character } from '../models/Character';
+import type { GameProgressionState, ActiveView, GameModeId } from './game';
+import type { Passage } from './narrative';
+import type { TrackedMaterial } from './inventory';
+import type { Region } from './world';
+
+export interface ReturnBannerDescriptor {
+  label: string;
+  action: () => void;
+}
+
+export interface CombatTriggerPayload {
+  mobName: string;
+  victoryPassageId?: string;
+  defeatPassageId?: string;
+}
+
+export interface EngineContext {
+  hero: Character;
+  game: GameProgressionState;
+  passages: Record<string, Passage>;
+  regions: Record<string, Region>;
+  saveState: () => void;
+  setActiveView: (view: ActiveView) => void;
+  setPendingMaterial: (mat: TrackedMaterial | null) => void;
+}
+
+export interface GameModeController {
+  readonly id: GameModeId;
+  readonly label: string;
+  readonly defaultView: ActiveView;
+  readonly allowInventoryEditing: boolean;
+
+  getAccessibleViews(ctx: EngineContext): ActiveView[];
+  canNavigateToView(targetView: ActiveView, ctx: EngineContext): boolean;
+  getReturnBanner(ctx: EngineContext): ReturnBannerDescriptor | null;
+
+  onActivityCleared?(type: 'forest' | 'mining', ctx: EngineContext): void;
+  initiateCombat(payload: CombatTriggerPayload, ctx: EngineContext): void;
+  resolveCombatExit(
+    outcome: 'victory' | 'defeat',
+    ctx: EngineContext,
+    runtimeContext?: Record<string, any>
+  ): void;
+
+  handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void;
+  handleHeroDefeated(ctx: EngineContext): void;
 }
 </file>
 
@@ -9191,204 +9208,6 @@ body {
 }
 </file>
 
-<file path="src/models/Character.ts">
-import { Entity, EntityData } from './Entity';
-import { getEquipmentItem } from '../data/recipes';
-import type { Item } from './Item';
-import type { TrackedMaterial, EquippedSlots, InventoryRule } from '../types/inventory';
-
-export interface SerializedCharacter extends EntityData {
-  restarts: number;
-  equipmentInventoryIds: string[];
-  equipped: EquippedSlots;
-  materials: Record<TrackedMaterial, number>;
-  materialRule: InventoryRule;
-}
-
-interface CharacterData {
-  restarts: number;
-  materialRule: InventoryRule;
-  equipmentInventoryIds: string[];
-  equipped: EquippedSlots;
-  materials: Record<TrackedMaterial, number>;
-}
-
-const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
-  Wood: 0,
-  Stone: 0,
-  Iron: 0,
-  Coal: 0,
-  Diamond: 0,
-  Leather: 0,
-  String: 0,
-  Wheat: 0,
-  Gunpowder: 0,
-  Slimeball: 0,
-  Fish: 0,
-};
-
-export class Character extends Entity {
-  #data: CharacterData;
-
-  constructor(initialData?: Partial<SerializedCharacter>) {
-    // 1. Initialize Entity vitals
-    super(
-      initialData?.name || 'Steve',
-      20,
-      initialData?.hearts ?? 20
-    );
-
-    // 2. Initialize Character-specific state in its own disjoint #data store
-    this.#data = this.createReactiveStore({
-      restarts: Math.max(0, initialData?.restarts ?? 0),
-      materialRule: initialData?.materialRule || 'total',
-      equipmentInventoryIds: initialData?.equipmentInventoryIds
-        ? [...initialData.equipmentInventoryIds]
-        : ['Wooden Pickaxe'],
-      equipped: {
-        weapon: initialData?.equipped?.weapon ?? null,
-        armor: initialData?.equipped?.armor ?? null,
-        pickaxe: initialData?.equipped?.pickaxe ?? 'Wooden Pickaxe',
-        key: initialData?.equipped?.key ?? null,
-      },
-      materials: {
-        ...DEFAULT_MATERIALS,
-        ...(initialData?.materials || {}),
-      },
-    });
-  }
-
-  // --- Subclass Accessors ---
-  public get restarts(): number {
-    return this.#data.restarts;
-  }
-  public set restarts(val: number) {
-    this.#data.restarts = Math.max(0, val);
-  }
-
-  public get materialRule(): InventoryRule {
-    return this.#data.materialRule;
-  }
-  public set materialRule(val: InventoryRule) {
-    this.#data.materialRule = val;
-  }
-
-  public get equipmentInventoryIds(): string[] {
-    return this.#data.equipmentInventoryIds;
-  }
-
-  public get equipped(): EquippedSlots {
-    return this.#data.equipped;
-  }
-
-  public get materials(): Record<TrackedMaterial, number> {
-    return this.#data.materials;
-  }
-
-  // --- Computed Equipment & Stats ---
-  public get equippedWeapon(): Item | undefined {
-    return this.#data.equipped.weapon ? getEquipmentItem(this.#data.equipped.weapon) : undefined;
-  }
-
-  public get equippedArmor(): Item | undefined {
-    return this.#data.equipped.armor ? getEquipmentItem(this.#data.equipped.armor) : undefined;
-  }
-
-  public get equippedPickaxe(): Item | undefined {
-    return this.#data.equipped.pickaxe ? getEquipmentItem(this.#data.equipped.pickaxe) : undefined;
-  }
-
-  public get attack(): number {
-    return this.equippedWeapon?.attack ?? 1;
-  }
-
-  public get damage(): number {
-    return this.equippedWeapon?.damage ?? 0;
-  }
-
-  public override get armor(): number {
-    return this.equippedArmor?.armorValue ?? 0;
-  }
-
-  public get totalMaterialsCount(): number {
-    return Object.values(this.#data.materials).reduce((sum, qty) => sum + qty, 0);
-  }
-
-  // --- Inventory Management ---
-  public hasItem(itemName: string): boolean {
-    return (
-      this.#data.equipmentInventoryIds.includes(itemName) ||
-      Object.values(this.#data.equipped).includes(itemName)
-    );
-  }
-
-  public addEquipment(itemName: string): void {
-    this.#data.equipmentInventoryIds.push(itemName);
-  }
-
-  public removeEquipment(itemName: string): boolean {
-    const idx = this.#data.equipmentInventoryIds.indexOf(itemName);
-    if (idx !== -1) {
-      this.#data.equipmentInventoryIds.splice(idx, 1);
-      return true;
-    }
-
-    // Check equipped slots if not in loose inventory
-    for (const [slot, name] of Object.entries(this.#data.equipped)) {
-      if (name === itemName) {
-        this.#data.equipped[slot as keyof EquippedSlots] = null;
-        return true;
-      }
-    }
-    return false;
-  }
-
-  public equip(slot: keyof EquippedSlots, itemName: string): boolean {
-    if (!this.#data.equipmentInventoryIds.includes(itemName)) return false;
-
-    // Unequip existing item to inventory
-    const current = this.#data.equipped[slot];
-    if (current) {
-      this.#data.equipmentInventoryIds.push(current);
-    }
-
-    // Remove from inventory and place into slot
-    const itemIdx = this.#data.equipmentInventoryIds.indexOf(itemName);
-    this.#data.equipmentInventoryIds.splice(itemIdx, 1);
-    this.#data.equipped[slot] = itemName;
-
-    return true;
-  }
-
-  public unequip(slot: keyof EquippedSlots): void {
-    const current = this.#data.equipped[slot];
-    if (current) {
-      this.#data.equipped[slot] = null;
-      this.#data.equipmentInventoryIds.push(current);
-    }
-  }
-
-  public adjustMaterial(mat: TrackedMaterial, delta: number): number {
-    const current = this.#data.materials[mat] || 0;
-    const next = Math.max(0, current + delta);
-    this.#data.materials[mat] = next;
-    return next - current;
-  }
-
-  // --- Serialization ---
-  public override toJSON(): SerializedCharacter {
-    return {
-      ...super.toJSON(),
-      restarts: this.restarts,
-      equipmentInventoryIds: [...this.#data.equipmentInventoryIds],
-      equipped: { ...this.#data.equipped },
-      materials: { ...this.#data.materials },
-      materialRule: this.materialRule,
-    };
-  }
-}
-</file>
-
 <file path="src/components/views/CombatView.tsx">
 import { useState, useEffect } from 'preact/hooks';
 import { Mob } from '../../models/Mob';
@@ -9827,10 +9646,251 @@ export function CombatView({
 }
 </file>
 
+<file path="src/models/Character.ts">
+import { Entity, EntityData } from './Entity';
+import { getEquipmentItem } from '../data/recipes';
+import type { Item } from './Item';
+import type { TrackedMaterial, EquippedSlots, InventoryRule } from '../types/inventory';
+import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
+
+export interface SerializedCharacter extends EntityData {
+  restarts: number;
+  equipmentInventoryIds: string[];
+  equipped: EquippedSlots;
+  materials: Record<TrackedMaterial, number>;
+  materialRule: InventoryRule;
+}
+
+interface CharacterData {
+  restarts: number;
+  materialRule: InventoryRule;
+  equipmentInventoryIds: string[];
+  equipped: EquippedSlots;
+  materials: Record<TrackedMaterial, number>;
+}
+
+const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
+  Wood: 0,
+  Stone: 0,
+  Iron: 0,
+  Coal: 0,
+  Diamond: 0,
+  Leather: 0,
+  String: 0,
+  Wheat: 0,
+  Gunpowder: 0,
+  Slimeball: 0,
+  Fish: 0,
+};
+
+export class Character extends Entity implements CombatLifecycleHooks {
+  #data: CharacterData;
+
+  constructor(initialData?: Partial<SerializedCharacter>) {
+    super(
+      initialData?.name || 'Steve',
+      initialData?.maxHearts ?? 20,
+      initialData?.hearts ?? initialData?.health ?? 20
+    );
+
+    this.#data = this.createReactiveStore({
+      restarts: Math.max(0, initialData?.restarts ?? 0),
+      materialRule: initialData?.materialRule || 'total',
+      equipmentInventoryIds: initialData?.equipmentInventoryIds
+        ? [...initialData.equipmentInventoryIds]
+        : ['Wooden Pickaxe'],
+      equipped: {
+        weapon: initialData?.equipped?.weapon ?? null,
+        armor: initialData?.equipped?.armor ?? null,
+        pickaxe: initialData?.equipped?.pickaxe ?? 'Wooden Pickaxe',
+        key: initialData?.equipped?.key ?? null,
+      },
+      materials: {
+        ...DEFAULT_MATERIALS,
+        ...(initialData?.materials || {}),
+      },
+    });
+  }
+
+  // --- Subclass Accessors ---
+  public get restarts(): number {
+    return this.#data.restarts;
+  }
+  public set restarts(val: number) {
+    this.#data.restarts = Math.max(0, val);
+  }
+
+  public get materialRule(): InventoryRule {
+    return this.#data.materialRule;
+  }
+  public set materialRule(val: InventoryRule) {
+    this.#data.materialRule = val;
+  }
+
+  public get equipmentInventoryIds(): string[] {
+    return this.#data.equipmentInventoryIds;
+  }
+
+  public get equipmentInventory(): Item[] {
+    return this.#data.equipmentInventoryIds
+      .map((name) => getEquipmentItem(name))
+      .filter((item): item is Item => item !== undefined);
+  }
+
+  public get equipped(): EquippedSlots {
+    return this.#data.equipped;
+  }
+
+  public get materials(): Record<TrackedMaterial, number> {
+    return this.#data.materials;
+  }
+
+  // --- Computed Equipment & Stats ---
+  public get equippedWeapon(): Item | undefined {
+    return this.#data.equipped.weapon ? getEquipmentItem(this.#data.equipped.weapon) : undefined;
+  }
+
+  public get equippedArmor(): Item | undefined {
+    return this.#data.equipped.armor ? getEquipmentItem(this.#data.equipped.armor) : undefined;
+  }
+
+  public get equippedPickaxe(): Item | undefined {
+    return this.#data.equipped.pickaxe ? getEquipmentItem(this.#data.equipped.pickaxe) : undefined;
+  }
+
+  public get equippedKey(): Item | undefined {
+    return this.#data.equipped.key ? getEquipmentItem(this.#data.equipped.key) : undefined;
+  }
+
+  public get attack(): number {
+    return this.equippedWeapon?.attack ?? 1;
+  }
+
+  public get damage(): number {
+    return this.equippedWeapon?.damage ?? 0;
+  }
+
+  public override get armor(): number {
+    return this.equippedArmor?.armorValue ?? 0;
+  }
+
+  public get totalMaterialsCount(): number {
+    return Object.values(this.#data.materials).reduce((sum, qty) => sum + qty, 0);
+  }
+
+  // --- Inventory Management ---
+  public hasItem(itemName: string): boolean {
+    return (
+      this.#data.equipmentInventoryIds.includes(itemName) ||
+      Object.values(this.#data.equipped).includes(itemName)
+    );
+  }
+
+  public canCraft(cost: Partial<Record<TrackedMaterial, number>>): boolean {
+    for (const [mat, required] of Object.entries(cost) as [TrackedMaterial, number][]) {
+      if ((this.#data.materials[mat] || 0) < (required || 0)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  public addEquipment(itemName: string): void {
+    this.#data.equipmentInventoryIds.push(itemName);
+  }
+
+  public removeEquipment(itemName: string): boolean {
+    const idx = this.#data.equipmentInventoryIds.indexOf(itemName);
+    if (idx !== -1) {
+      this.#data.equipmentInventoryIds.splice(idx, 1);
+      return true;
+    }
+
+    for (const [slot, name] of Object.entries(this.#data.equipped)) {
+      if (name === itemName) {
+        this.#data.equipped[slot as keyof EquippedSlots] = null;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public equip(slot: keyof EquippedSlots, itemName: string): boolean {
+    if (!this.#data.equipmentInventoryIds.includes(itemName)) return false;
+
+    const current = this.#data.equipped[slot];
+    if (current) {
+      this.#data.equipmentInventoryIds.push(current);
+    }
+
+    const itemIdx = this.#data.equipmentInventoryIds.indexOf(itemName);
+    this.#data.equipmentInventoryIds.splice(itemIdx, 1);
+    this.#data.equipped[slot] = itemName;
+
+    return true;
+  }
+
+  public unequip(slot: keyof EquippedSlots): void {
+    const current = this.#data.equipped[slot];
+    if (current) {
+      this.#data.equipped[slot] = null;
+      this.#data.equipmentInventoryIds.push(current);
+    }
+  }
+
+  public adjustMaterial(mat: TrackedMaterial, delta: number): number {
+    const current = this.#data.materials[mat] || 0;
+    const next = Math.max(0, current + delta);
+    this.#data.materials[mat] = next;
+    return next - current;
+  }
+
+  public respawn(): void {
+    this.resetHealth();
+    this.restarts += 1;
+  }
+
+  // --- Combat Lifecycle Hook Forwarding ---
+  public onCombatStart(ctx: CombatContext): void { this.#dispatchItemHooks('onCombatStart', ctx); }
+  public onRoundStart(ctx: CombatContext): void { this.#dispatchItemHooks('onRoundStart', ctx); }
+  public onRollEvaluated(ctx: CombatContext): void { this.#dispatchItemHooks('onRollEvaluated', ctx); }
+  public onDealDamage(ctx: CombatContext): void { this.#dispatchItemHooks('onDealDamage', ctx); }
+  public onReceiveDamage(ctx: CombatContext): void { this.#dispatchItemHooks('onReceiveDamage', ctx); }
+  public onRoundEnd(ctx: CombatContext): void { this.#dispatchItemHooks('onRoundEnd', ctx); }
+  public onDeath(ctx: CombatContext): void { this.#dispatchItemHooks('onDeath', ctx); }
+  public onCombatEnd(ctx: CombatContext): void { this.#dispatchItemHooks('onCombatEnd', ctx); }
+
+  #dispatchItemHooks(hook: keyof CombatLifecycleHooks, ctx: CombatContext): void {
+    const items = [
+      this.equippedWeapon,
+      this.equippedArmor,
+      this.equippedPickaxe,
+      this.equippedKey,
+    ];
+    for (const item of items) {
+      item?.hooks?.[hook]?.(ctx);
+    }
+  }
+
+  // --- Serialization ---
+  public override toJSON(): SerializedCharacter {
+    return {
+      ...super.toJSON(),
+      health: this.hearts,
+      restarts: this.restarts,
+      equipmentInventoryIds: [...this.#data.equipmentInventoryIds],
+      equipped: { ...this.#data.equipped },
+      materials: { ...this.#data.materials },
+      materialRule: this.materialRule,
+    };
+  }
+}
+</file>
+
 <file path="src/App.tsx">
 import { useEffect, useState, useCallback } from 'preact/hooks';
 import { Character } from './models/Character';
-import { TrackedMaterial } from './types/inventory';
+import type { TrackedMaterial } from './types/inventory';
 import type { GameModeId, GameProgressionState, GameSaveData } from './types/game';
 import { CUSTOM_STORY_STORAGE_KEY, getInitialStoryPassages, STORY_PASSAGES, validateNarrative } from './data/storyPassages';
 import { getModeController } from './controllers';
@@ -9849,10 +9909,10 @@ import {
   OptionsDrawer,
   MaterialSwapModal,
 } from './components';
-import { Passage } from './types/narrative';
+import type { Passage } from './types/narrative';
 import type { EngineContext } from './types/controller';
 import { CUSTOM_WORLD_STORAGE_KEY, getInitialWorldPackage, REGIONS, validateWorldPackage } from './data/regions';
-import { Region } from './types/world';
+import type { Region } from './types/world';
 
 const STORAGE_KEY = 'minecraft_multimode_rpg_data';
 
@@ -9866,7 +9926,6 @@ export function App() {
     }
   });
 
-  // Keep hero in state so the instance is stable across renders
   const [hero, setHero] = useState<Character>(() => new Character(saveData.character));
   const [game, setGame] = useState<GameProgressionState>(saveData.game);
 
@@ -9879,7 +9938,6 @@ export function App() {
   const [isCustomWorld, setIsCustomWorld] = useState(() => localStorage.getItem(CUSTOM_WORLD_STORAGE_KEY) !== null);
   const [, setTick] = useState(0);
 
-  // Lazy load world & narrative collections
   const [regions, setRegions] = useState<Record<string, Region>>(() => getInitialWorldPackage().regions);
   const [storyPassages, setStoryPassages] = useState<Record<string, Passage>>(() => {
     return saveData.game.mode === 'open_world' ? getInitialWorldPackage().passages : getInitialStoryPassages();
@@ -9891,7 +9949,6 @@ export function App() {
     setTick((t) => t + 1);
   }, [hero, game]);
 
-  // Automatically cleans up the old subscription and attaches to the new hero
   useEffect(() => {
     const unsubscribe = hero.subscribe(() => {
       saveState();
@@ -9961,6 +10018,7 @@ export function App() {
         {game.activeView === 'poi_node' && (
           <PoiNodeView
             hero={hero}
+            game={game}
             state={game.openWorld}
             onUpdate={saveState}
             onNavigateView={engineContext.setActiveView}
