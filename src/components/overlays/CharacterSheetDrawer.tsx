@@ -6,6 +6,7 @@ import { MaterialCard } from '../ui/MaterialCard';
 import { StatBadge } from '../ui/StatBadge';
 import { useState } from 'preact/hooks';
 import { TRACKED_MATERIALS, EQUIPMENT_DEFINITIONS, getEquipmentItem } from '../../data/recipes'; //
+import { useObservable } from '../../hooks/useObservable';
 
 interface CharacterSheetProps {
   hero: Character;
@@ -17,6 +18,8 @@ interface CharacterSheetProps {
 
 export function CharacterSheetDrawer({ hero, isOpen, allowInventoryEditing = false, onClose, onUpdate }: CharacterSheetProps) {
   const [selectedGearToAdd, setSelectedGearToAdd] = useState(EQUIPMENT_DEFINITIONS[0].name);
+
+  useObservable(hero);
 
   const adjustHp = (delta: number) => {
     hero.changeHealth(delta);

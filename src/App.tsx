@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState, useCallback } from 'preact/hooks';
 import { Character } from './models/Character';
 import { TrackedMaterial } from './types/inventory';
 import type { GameModeId, GameProgressionState, GameSaveData } from './types/game';
@@ -21,7 +21,7 @@ import {
 } from './components';
 import { Passage } from './types/narrative';
 import type { EngineContext } from './types/controller';
-import { CUSTOM_WORLD_STORAGE_KEY, getInitialRegions, REGIONS, validateWorld } from './data/regions';
+import { CUSTOM_WORLD_STORAGE_KEY, getInitialWorldPackage, REGIONS, validateWorldPackage } from './data/regions';
 import { Region } from './types/world';
 
 const STORAGE_KEY = 'minecraft_multimode_rpg_data';
@@ -35,24 +35,39 @@ export function App() {
       return migrateSaveData(null);
     }
   });
+
+  // Keep hero in state so the instance is stable across renders
   const [hero, setHero] = useState<Character>(() => new Character(saveData.character));
   const [game, setGame] = useState<GameProgressionState>(saveData.game);
+
   const [sheetOpen, setSheetOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [targetMobName, setTargetMobName] = useState<string | undefined>(undefined);
   const [combatContext, setCombatContext] = useState<{ victoryPassageId?: string; defeatPassageId?: string } | undefined>(undefined);
   const [pendingMaterial, setPendingMaterial] = useState<TrackedMaterial | null>(null);
-  const [storyPassages, setStoryPassages] = useState<Record<string, Passage>>(getInitialStoryPassages);
   const [isCustomStory, setIsCustomStory] = useState(() => localStorage.getItem(CUSTOM_STORY_STORAGE_KEY) !== null);
-  const [, setTick] = useState(0);
-  const [regions, setRegions] = useState<Record<string, Region>>(getInitialRegions);
   const [isCustomWorld, setIsCustomWorld] = useState(() => localStorage.getItem(CUSTOM_WORLD_STORAGE_KEY) !== null);
+  const [, setTick] = useState(0);
 
-  const saveState = () => {
+  // Lazy load world & narrative collections
+  const [regions, setRegions] = useState<Record<string, Region>>(() => getInitialWorldPackage().regions);
+  const [storyPassages, setStoryPassages] = useState<Record<string, Passage>>(() => {
+    return saveData.game.mode === 'open_world' ? getInitialWorldPackage().passages : getInitialStoryPassages();
+  });
+
+  const saveState = useCallback(() => {
     const updated = { version: 2, character: hero.toJSON(), game };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     setTick((t) => t + 1);
-  };
+  }, [hero, game]);
+
+  // Automatically cleans up the old subscription and attaches to the new hero
+  useEffect(() => {
+    const unsubscribe = hero.subscribe(() => {
+      saveState();
+    });
+    return unsubscribe;
+  }, [hero, saveState]);
 
   const controller = getModeController(game.mode);
 
@@ -87,7 +102,6 @@ export function App() {
         accessibleViews={accessibleViews}
       />
 
-      {/* Return Banner Rendered from Plain Data */}
       {returnBanner && (
         <div style={{ maxWidth: '1100px', margin: '12px auto 0 auto', padding: '0 16px' }}>
           <button type="button" class="pixel-btn btn-active" style={{ width: '100%' }} onClick={returnBanner.action}>
@@ -138,6 +152,7 @@ export function App() {
         {game.activeView === 'narrative' && (
           <NarrativeView
             hero={hero}
+            game={game}
             passages={storyPassages}
             currentPassageId={game.narrative.currentPassageId}
             visitedPassages={game.narrative.visitedPassages}
@@ -226,8 +241,9 @@ export function App() {
         onUpdate={saveState}
         onReset={() => {
           localStorage.removeItem(STORAGE_KEY);
-          setHero(new Character(undefined));
-          setGame(migrateSaveData(null).game);
+          const fresh = migrateSaveData(null);
+          setHero(new Character(fresh.character));
+          setGame(fresh.game);
           setOptionsOpen(false);
         }}
         onLoad={(raw) => {
@@ -237,7 +253,6 @@ export function App() {
             setHero(newHero);
             setGame(loaded.game);
             localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, character: newHero.toJSON(), game: loaded.game }));
-            setTick((t) => t + 1);
             return true;
           } catch {
             return false;
@@ -265,12 +280,13 @@ export function App() {
         regions={regions}
         isCustomWorld={isCustomWorld}
         onLoadWorld={(json) => {
-          const validated = validateWorld(JSON.parse(json));
+          const validated = validateWorldPackage(JSON.parse(json));
           if (!validated) return false;
-          setRegions(validated);
+          setRegions(validated.regions);
+          setStoryPassages(validated.passages);
           setIsCustomWorld(true);
           localStorage.setItem(CUSTOM_WORLD_STORAGE_KEY, JSON.stringify(validated));
-          const firstReg = Object.keys(validated)[0];
+          const firstReg = Object.keys(validated.regions)[0];
           game.openWorld.currentRegionId = firstReg;
           game.openWorld.currentPoiId = null;
           game.openWorld.currentNodeId = null;

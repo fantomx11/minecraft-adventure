@@ -31,15 +31,10 @@ export const STORY_PASSAGES: Record<string, Passage> = {
     "title": "Abandoned Woodcutter's Shack",
     "text": "The wooden door hangs crooked on rusty hinges. Dust motes dance in rays of sunlight. Inside sits an intact Crafting Bench, and buried beneath a floorboard is a traveler's chest containing dry timber and a lit Torch!",
     "icon": "",
-    "autoGrant": {
-      "equipment": [
-        "Torch"
-      ],
-      "materials": {
-        "Wood": 2
-      },
-      "message": "Salvaged a Torch and 2 Wood from the hidden chest!"
-    },
+    "onEnterMutations": [
+      { "type": "inventory", "itemId": "Torch", "action": "add", "count": 1 },
+      { "type": "inventory", "itemId": "Wood", "action": "add", "count": 2 }
+    ],
     "accessibleViews": [
       "crafting"
     ],
@@ -75,12 +70,24 @@ export const STORY_PASSAGES: Record<string, Passage> = {
       },
       {
         "text": "Chop through dense brambles into a spider clearing (Requires 2 Groves Cleared)",
-        "requiresGrovesCleared": 2,
+        "condition": {
+          "type": "progression",
+          "counter": "forestCleared",
+          "comparator": ">=",
+          "value": 2
+        },
+        "lockedReason": "Requires 2 Groves Cleared",
         "targetPassageId": "spider_nest"
       },
       {
         "text": "Sail along the woodland river to the coast (Requires a Boat)",
-        "requiresItem": "Boat",
+        "condition": {
+          "type": "inventory",
+          "itemId": "Boat",
+          "comparator": ">=",
+          "count": 1
+        },
+        "lockedReason": "Requires Boat",
         "targetPassageId": "ocean_monument_shore"
       },
       {
@@ -103,22 +110,8 @@ export const STORY_PASSAGES: Record<string, Passage> = {
         "text": "Draw your weapon and attack the lurking spider!",
         "type": "combat",
         "mobTable": [
-          {
-            "mob": "Spider",
-            "rollRange": [
-              1,
-              3
-            ],
-            "label": "1-3: Giant Forest Spider"
-          },
-          {
-            "mob": "Cave Spider",
-            "rollRange": [
-              4,
-              6
-            ],
-            "label": "4-6: Venomous Cave Spider"
-          }
+          { "mob": "Spider", "rollRange": [1, 3], "label": "1-3: Giant Forest Spider" },
+          { "mob": "Cave Spider", "rollRange": [4, 6], "label": "4-6: Venomous Cave Spider" }
         ],
         "onVictoryPassageId": "spider_nest_cleared",
         "onDefeatPassageId": "spider_nest_defeat"
@@ -162,13 +155,10 @@ export const STORY_PASSAGES: Record<string, Passage> = {
     "title": "Silk-Wrapped Hoard",
     "text": "The fallen spider disintegrates into sticky threads. Behind its lair, you uncover discarded packs containing fresh leather hides and strong silk string.",
     "icon": "",
-    "autoGrant": {
-      "materials": {
-        "String": 3,
-        "Leather": 2
-      },
-      "message": "Gathered 3 String and 2 Leather from the nest!"
-    },
+    "onEnterMutations": [
+      { "type": "inventory", "itemId": "String", "action": "add", "count": 3 },
+      { "type": "inventory", "itemId": "Leather", "action": "add", "count": 2 }
+    ],
     "accessibleViews": [
       "forest"
     ],
@@ -216,12 +206,8 @@ export const STORY_PASSAGES: Record<string, Passage> = {
   "witch_trap": {
     "id": "witch_trap",
     "title": "Corrosive Mist!",
-    "text": "The Witch hurls a Splash Potion of Harming directly at your boots! Corrosive vapors burn your skin (-3 HP) as she brandishes another brew!",
+    "text": "The Witch hurls a Splash Potion of Harming directly at your boots! Corrosive vapors fill the air as she brandishes another brew!",
     "icon": "",
-    "autoGrant": {
-      "healthDelta": -3,
-      "message": "Suffered 3 damage from the corrosive splash potion!"
-    },
     "triggerCombat": {
       "mob": "Witch",
       "introText": "The enraged Witch charges into battle!",
@@ -243,14 +229,10 @@ export const STORY_PASSAGES: Record<string, Passage> = {
     "title": "The Alchemist's Stash",
     "text": "The Witch vanishes with a shriek. The bubbling cauldron calms, leaving behind precious alchemy supplies and an invigorating medicinal elixir.",
     "icon": "",
-    "autoGrant": {
-      "materials": {
-        "Gunpowder": 3,
-        "Slimeball": 2
-      },
-      "healthDelta": 4,
-      "message": "Restored 4 Hearts and looted 3 Gunpowder & 2 Slimeballs!"
-    },
+    "onEnterMutations": [
+      { "type": "inventory", "itemId": "Gunpowder", "action": "add", "count": 3 },
+      { "type": "inventory", "itemId": "Slimeball", "action": "add", "count": 2 }
+    ],
     "choices": [
       {
         "text": "Head back to the Deep Woods",
@@ -270,7 +252,13 @@ export const STORY_PASSAGES: Record<string, Passage> = {
     "choices": [
       {
         "text": "Hold your Torch high and venture deep underground (Requires Torch)",
-        "requiresItem": "Torch",
+        "condition": {
+          "type": "inventory",
+          "itemId": "Torch",
+          "comparator": ">=",
+          "count": 1
+        },
+        "lockedReason": "Requires Torch",
         "targetPassageId": "lit_cavern"
       },
       {
@@ -297,30 +285,9 @@ export const STORY_PASSAGES: Record<string, Passage> = {
     "icon": "",
     "triggerCombat": {
       "mobTable": [
-        {
-          "mob": "Zombie",
-          "rollRange": [
-            1,
-            2
-          ],
-          "label": "1-2: Cavern Zombie"
-        },
-        {
-          "mob": "Skeleton",
-          "rollRange": [
-            3,
-            4
-          ],
-          "label": "3-4: Skeleton Archer"
-        },
-        {
-          "mob": "Creeper",
-          "rollRange": [
-            5,
-            6
-          ],
-          "label": "5-6: Hissing Creeper"
-        }
+        { "mob": "Zombie", "rollRange": [1, 2], "label": "1-2: Cavern Zombie" },
+        { "mob": "Skeleton", "rollRange": [3, 4], "label": "3-4: Skeleton Archer" },
+        { "mob": "Creeper", "rollRange": [5, 6], "label": "5-6: Hissing Creeper" }
       ],
       "introText": "A hostile subterranean monster attacks!",
       "onVictoryPassageId": "lit_cavern",
@@ -331,30 +298,9 @@ export const STORY_PASSAGES: Record<string, Passage> = {
         "text": "Fight the cavern beast!",
         "type": "combat",
         "mobTable": [
-          {
-            "mob": "Zombie",
-            "rollRange": [
-              1,
-              2
-            ],
-            "label": "1-2: Cavern Zombie"
-          },
-          {
-            "mob": "Skeleton",
-            "rollRange": [
-              3,
-              4
-            ],
-            "label": "3-4: Skeleton Archer"
-          },
-          {
-            "mob": "Creeper",
-            "rollRange": [
-              5,
-              6
-            ],
-            "label": "5-6: Hissing Creeper"
-          }
+          { "mob": "Zombie", "rollRange": [1, 2], "label": "1-2: Cavern Zombie" },
+          { "mob": "Skeleton", "rollRange": [3, 4], "label": "3-4: Skeleton Archer" },
+          { "mob": "Creeper", "rollRange": [5, 6], "label": "5-6: Hissing Creeper" }
         ],
         "onVictoryPassageId": "lit_cavern",
         "onDefeatPassageId": "cavern_defeat"
@@ -393,19 +339,27 @@ export const STORY_PASSAGES: Record<string, Passage> = {
     "choices": [
       {
         "text": "Pour water from a Bucket to create a solid obsidian bridge (Requires Bucket)",
-        "requiresItem": "Bucket",
+        "condition": {
+          "type": "inventory",
+          "itemId": "Bucket",
+          "comparator": ">=",
+          "count": 1
+        },
+        "lockedReason": "Requires Bucket",
         "targetPassageId": "dungeon_gate"
       },
       {
         "text": "Build a makeshift wooden walkway (Costs 3 Wood)",
-        "requiresMaterial": {
-          "material": "Wood",
+        "condition": {
+          "type": "inventory",
+          "itemId": "Wood",
+          "comparator": ">=",
           "count": 3
         },
-        "consumeMaterial": {
-          "material": "Wood",
-          "count": 3
-        },
+        "mutations": [
+          { "type": "inventory", "itemId": "Wood", "action": "remove", "count": 3 }
+        ],
+        "lockedReason": "Requires 3 Wood",
         "targetPassageId": "dungeon_gate"
       },
       {
@@ -428,12 +382,8 @@ export const STORY_PASSAGES: Record<string, Passage> = {
   "lava_burn": {
     "id": "lava_burn",
     "title": "Scorched by Lava!",
-    "text": "You scramble backward onto stone with smoldering boots (-5 HP)! The lava lake bubbles menacingly.",
+    "text": "You scramble backward onto stone with smoldering boots! The lava lake bubbles menacingly.",
     "icon": "",
-    "autoGrant": {
-      "healthDelta": -5,
-      "message": "Took 5 fire damage from touching molten lava!"
-    },
     "choices": [
       {
         "text": "Catch your breath and reconsider",
@@ -460,12 +410,27 @@ export const STORY_PASSAGES: Record<string, Passage> = {
       },
       {
         "text": "Blast the fortified gate apart with TNT (Requires TNT)",
-        "requiresItem": "TNT",
+        "condition": {
+          "type": "inventory",
+          "itemId": "TNT",
+          "comparator": ">=",
+          "count": 1
+        },
+        "mutations": [
+          { "type": "inventory", "itemId": "TNT", "action": "remove", "count": 1 }
+        ],
+        "lockedReason": "Requires TNT",
         "targetPassageId": "vault_room"
       },
       {
         "text": "Mine through the obsidian walls with a Diamond Pickaxe (Requires Diamond Pickaxe)",
-        "requiresItem": "Diamond Pickaxe",
+        "condition": {
+          "type": "inventory",
+          "itemId": "Diamond Pickaxe",
+          "comparator": ">=",
+          "count": 1
+        },
+        "lockedReason": "Requires Diamond Pickaxe",
         "targetPassageId": "vault_room"
       },
       {
@@ -479,16 +444,11 @@ export const STORY_PASSAGES: Record<string, Passage> = {
     "title": "The Vault of Wonders",
     "text": "The heavy barrier crumbles! Inside lies an altar glowing with warm golden light. On top sits a radiant Totem of Undying, accompanied by raw diamonds and forged iron ingots!",
     "icon": "",
-    "autoGrant": {
-      "equipment": [
-        "Totem of Undying"
-      ],
-      "materials": {
-        "Diamond": 3,
-        "Iron": 3
-      },
-      "message": "Claimed a Totem of Undying, 3 Diamonds, and 3 Iron ingots!"
-    },
+    "onEnterMutations": [
+      { "type": "inventory", "itemId": "Totem of Undying", "action": "add", "count": 1 },
+      { "type": "inventory", "itemId": "Diamond", "action": "add", "count": 3 },
+      { "type": "inventory", "itemId": "Iron", "action": "add", "count": 3 }
+    ],
     "accessibleViews": [
       "crafting"
     ],
@@ -519,7 +479,13 @@ export const STORY_PASSAGES: Record<string, Passage> = {
       },
       {
         "text": "Explore the sunken shipwreck reef (Requires Iron Sword)",
-        "requiresItem": "Iron Sword",
+        "condition": {
+          "type": "inventory",
+          "itemId": "Iron Sword",
+          "comparator": ">=",
+          "count": 1
+        },
+        "lockedReason": "Requires Iron Sword",
         "targetPassageId": "drowned_shore"
       },
       {
@@ -558,14 +524,11 @@ export const STORY_PASSAGES: Record<string, Passage> = {
     "title": "Sunken Ship's Bounty",
     "text": "The Drowned collapses into bubbles. Inside the half-submerged cargo hold, you discover salvage: forged iron, fresh fish, and cured leather.",
     "icon": "",
-    "autoGrant": {
-      "materials": {
-        "Iron": 2,
-        "Fish": 3,
-        "Leather": 2
-      },
-      "message": "Retrieved 2 Iron, 3 Fish, and 2 Leather from the wreck!"
-    },
+    "onEnterMutations": [
+      { "type": "inventory", "itemId": "Iron", "action": "add", "count": 2 },
+      { "type": "inventory", "itemId": "Fish", "action": "add", "count": 3 },
+      { "type": "inventory", "itemId": "Leather", "action": "add", "count": 2 }
+    ],
     "choices": [
       {
         "text": "Return to the Ocean Monument",
@@ -607,10 +570,6 @@ export const STORY_PASSAGES: Record<string, Passage> = {
     "title": "Champion of the Overworld",
     "text": "Victory! You have explored dark depths, vanquished mythical beasts, navigated chasms, and forged masterwork equipment. Your name is etched into the bedrock as a true adventurer!",
     "icon": "",
-    "autoGrant": {
-      "healthDelta": 20,
-      "message": "Hearts restored to maximum in celebration of victory!"
-    },
     "choices": [
       {
         "text": "Return to the hilltop and continue exploring the realm",
@@ -729,8 +688,6 @@ export function validateNarrative(raw: unknown): Record<string, Passage> | null 
   }
 
   const candidate = raw as Record<string, any>;
-
-  // A valid narrative pack must have at least one passage, and ideally a 'start' node
   if (Object.keys(candidate).length === 0) {
     return null;
   }

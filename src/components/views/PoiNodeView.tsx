@@ -1,11 +1,12 @@
 import type { Character } from '../../models/Character';
-import type { OpenWorldProgression, ActiveView } from '../../types/game';
+import type { OpenWorldProgression, ActiveView, GameProgressionState } from '../../types/game';
 import type { TrackedMaterial } from '../../types/inventory';
-import type { POINode, PointOfInterest, POINodeExit, Region } from '../../types/world';
+import type { POINode, PointOfInterest, POINodeExit, POIQuestHook, Region } from '../../types/world';
 import { REGIONS } from '../../data/regions';
 import { PixelFrame } from '../ui/PixelFrame';
 import { StatusBar } from '../ui/StatusBar';
 import { Icon } from '../ui/Icon';
+import { evaluateCondition, applyMutations, EvaluationContext } from '../../engine/evaluator';
 
 interface PoiNodeViewProps {
   hero: Character;
@@ -30,7 +31,7 @@ export function PoiNodeView({
   onGainMaterial,
   onExitToMap,
 }: PoiNodeViewProps) {
-  const currentRegion = regions[state.currentRegionId] || Object.values(regions)[0];
+  const currentRegion = regions[state.currentRegionId] || REGIONS[state.currentRegionId] || Object.values(regions)[0];
   const currentPoi: PointOfInterest | undefined = currentRegion.pointsOfInterest.find(
     (p) => p.id === state.currentPoiId
   );
@@ -50,16 +51,15 @@ export function PoiNodeView({
     );
   }
 
+  const evalCtx: EvaluationContext = {
+    hero,
+    game: { openWorld: state } as GameProgressionState,
+    onGainMaterial,
+  };
+
   const checkExitRequirement = (exit: POINodeExit): { allowed: boolean; reason?: string } => {
-    if (exit.requiresItem && !hero.hasItem(exit.requiresItem)) {
-      return { allowed: false, reason: `Requires: ${exit.requiresItem}` };
-    }
-    if (exit.requiresFlags) {
-      for (const [flag, val] of Object.entries(exit.requiresFlags)) {
-        if (state.questFlags[flag] !== val) {
-          return { allowed: false, reason: 'Path is sealed' };
-        }
-      }
+    if (exit.condition && !evaluateCondition(exit.condition, evalCtx)) {
+      return { allowed: false, reason: exit.lockedReason || 'Path is sealed' };
     }
     return { allowed: true };
   };
@@ -67,6 +67,11 @@ export function PoiNodeView({
   const handleExitClick = (exit: POINodeExit) => {
     const { allowed } = checkExitRequirement(exit);
     if (!allowed) return;
+
+    if (exit.mutations) {
+      applyMutations(exit.mutations, evalCtx);
+      onUpdate();
+    }
 
     if (exit.exitToRegion) {
       onExitToMap();
@@ -77,6 +82,24 @@ export function PoiNodeView({
       state.currentNodeId = exit.targetNodeId;
       onUpdate();
     }
+  };
+
+  const checkQuestHookAllowed = (qh: POIQuestHook): { allowed: boolean; reason?: string } => {
+    if (qh.condition && !evaluateCondition(qh.condition, evalCtx)) {
+      return { allowed: false, reason: qh.lockedReason || 'Locked' };
+    }
+    return { allowed: true };
+  };
+
+  const handleTriggerQuestHook = (qh: POIQuestHook) => {
+    const { allowed } = checkQuestHookAllowed(qh);
+    if (!allowed) return;
+
+    if (qh.mutations) {
+      applyMutations(qh.mutations, evalCtx);
+      onUpdate();
+    }
+    onTriggerPassage(qh.passageId);
   };
 
   const handleAction = (action: typeof currentNode.actions[0]) => {
@@ -97,6 +120,18 @@ export function PoiNodeView({
       onUpdate();
     }
   };
+
+  const renderedHooks = currentNode.questHooks.filter((qh) => {
+    const { allowed } = checkQuestHookAllowed(qh);
+    const behavior = qh.behavior || 'hide';
+    return allowed || behavior !== 'hide';
+  });
+
+  const renderedExits = currentNode.exits.filter((ex) => {
+    const { allowed } = checkExitRequirement(ex);
+    const behavior = ex.behavior || 'disable';
+    return allowed || behavior !== 'hide';
+  });
 
   return (
     <section class="view-panel active">
@@ -147,20 +182,27 @@ export function PoiNodeView({
           </div>
         )}
 
-        {currentNode.questHooks.length > 0 && (
+        {renderedHooks.length > 0 && (
           <div style={{ marginBottom: '16px' }}>
             <span class="narrative-section-tag">QUEST HOOKS & DIALOGUE</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-              {currentNode.questHooks.map((qh) => (
-                <button
-                  key={qh.id}
-                  type="button"
-                  class="pixel-btn btn-active"
-                  onClick={() => onTriggerPassage(qh.passageId)}
-                >
-                  <Icon name="book" /> {qh.label}
-                </button>
-              ))}
+              {renderedHooks.map((qh) => {
+                const { allowed, reason } = checkQuestHookAllowed(qh);
+                return (
+                  <button
+                    key={qh.id}
+                    type="button"
+                    class={`pixel-btn narrative-choice-btn ${allowed ? 'btn-active' : 'choice-locked'}`}
+                    disabled={!allowed}
+                    onClick={() => handleTriggerQuestHook(qh)}
+                  >
+                    <span class="choice-text">
+                      <Icon name="book" /> {qh.label}
+                    </span>
+                    {!allowed && reason && <span class="choice-badge badge-locked">[{reason}]</span>}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -168,7 +210,7 @@ export function PoiNodeView({
         <div>
           <span class="narrative-section-tag">PATHS & EXITS</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-            {currentNode.exits.map((ex, idx) => {
+            {renderedExits.map((ex, idx) => {
               const { allowed, reason } = checkExitRequirement(ex);
               return (
                 <button

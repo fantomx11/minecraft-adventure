@@ -1,6 +1,13 @@
 import type { Region } from '../types/world';
+import type { Passage } from '../types/narrative';
+import { STORY_PASSAGES } from './storyPassages';
 
-export const CUSTOM_WORLD_STORAGE_KEY = 'minecraft_custom_world_regions';
+export const CUSTOM_WORLD_STORAGE_KEY = 'minecraft_custom_world_dataset';
+
+export interface OpenWorldPackage {
+  regions: Record<string, Region>;
+  passages: Record<string, Passage>;
+}
 
 export const REGIONS: Record<string, Region> = {
   plains_settlement: {
@@ -26,8 +33,7 @@ export const REGIONS: Record<string, Region> = {
             id: 'town_square',
             title: 'Village Crossroads',
             description: 'The sawmill wheel turns steadily in the river. Down the gravel path stands the general merchant and local forge.',
-            actions: [
-            ],
+            actions: [],
             exits: [
               { targetNodeId: 'trader_shop', label: 'Enter Riverwood Trader' },
               { targetNodeId: 'blacksmith_forge', label: 'Approach Blacksmith Anvil' },
@@ -49,7 +55,12 @@ export const REGIONS: Record<string, Region> = {
                 questId: 'golden_claw',
                 label: 'Inquire about the bandit break-in',
                 passageId: 'abandoned_shack',
-                prohibitedFlags: ['golden_claw_recovered'],
+                condition: {
+                  type: 'flag',
+                  flag: 'golden_claw_recovered',
+                  comparator: '!=',
+                  value: true,
+                },
               },
             ],
           },
@@ -97,7 +108,6 @@ export const REGIONS: Record<string, Region> = {
       },
     ],
   },
-
   bleak_falls_pass: {
     id: 'bleak_falls_pass',
     name: 'Bleak Falls Pass',
@@ -179,35 +189,45 @@ export const REGIONS: Record<string, Region> = {
   },
 };
 
-export function validateWorld(raw: unknown): Record<string, Region> | null {
+export function validateWorldPackage(raw: unknown): OpenWorldPackage | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const candidate = raw as Record<string, any>;
-  if (Object.keys(candidate).length === 0) return null;
 
-  for (const reg of Object.values(candidate)) {
+  // Handle format containing { regions, passages } or raw regions
+  const regionsObj = candidate.regions || candidate;
+  if (!regionsObj || typeof regionsObj !== 'object') return null;
+
+  for (const reg of Object.values(regionsObj)) {
     if (
-      typeof reg.id !== 'string' ||
-      typeof reg.name !== 'string' ||
-      typeof reg.description !== 'string' ||
-      !Array.isArray(reg.pointsOfInterest) ||
-      !Array.isArray(reg.adjacentRegionIds)
+      typeof (reg as any).id !== 'string' ||
+      typeof (reg as any).name !== 'string' ||
+      typeof (reg as any).description !== 'string' ||
+      !Array.isArray((reg as any).pointsOfInterest)
     ) {
       return null;
     }
   }
-  return candidate as Record<string, Region>;
+
+  const passagesObj = candidate.passages || STORY_PASSAGES;
+  return {
+    regions: regionsObj as Record<string, Region>,
+    passages: passagesObj as Record<string, Passage>,
+  };
 }
 
-export function getInitialRegions(): Record<string, Region> {
+export function getInitialWorldPackage(): OpenWorldPackage {
   const custom = localStorage.getItem(CUSTOM_WORLD_STORAGE_KEY);
   if (custom) {
     try {
       const parsed = JSON.parse(custom);
-      const validated = validateWorld(parsed);
+      const validated = validateWorldPackage(parsed);
       if (validated) return validated;
     } catch {
-      console.warn('Failed to parse custom world regions. Falling back to default.');
+      console.warn('Failed to parse custom world package. Falling back to default.');
     }
   }
-  return JSON.parse(JSON.stringify(REGIONS));
+  return {
+    regions: JSON.parse(JSON.stringify(REGIONS)),
+    passages: JSON.parse(JSON.stringify(STORY_PASSAGES)),
+  };
 }

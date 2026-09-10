@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'preact/hooks';
 import type { Character } from '../../models/Character';
 import type { TrackedMaterial } from '../../types/inventory';
-import type { ActiveView } from '../../types/game';
-import type { Passage, PassageChoice, PassageReward } from '../../types/narrative';
+import type { ActiveView, GameProgressionState } from '../../types/game';
+import type { Passage, PassageChoice } from '../../types/narrative';
 import { rollOnMobTable } from '../../data/storyPassages';
 import { PixelFrame } from '../ui/PixelFrame';
 import { StatusBar } from '../ui/StatusBar';
 import { Icon } from '../ui/Icon';
 import type { IconName } from '../../data/icons';
+import { evaluateCondition, applyMutations, EvaluationContext } from '../../engine/evaluator';
 
 interface NarrativeViewProps {
   hero: Character;
@@ -25,6 +26,7 @@ interface NarrativeViewProps {
     onDefeatPassageId?: string
   ) => void;
   onGainMaterial: (mat: TrackedMaterial, amount?: number) => void;
+  game?: GameProgressionState;
 }
 
 export function NarrativeView({
@@ -39,10 +41,10 @@ export function NarrativeView({
   onNavigateView,
   onTriggerCombat,
   onGainMaterial,
+  game,
 }: NarrativeViewProps) {
   const firstPassageId = Object.keys(passages)[0] || 'start';
   const passage = passages[currentPassageId] || passages[firstPassageId];
-  const [grantNotice, setGrantNotice] = useState<string | null>(null);
   const [diceCheckResult, setDiceCheckResult] = useState<{
     roll: number;
     target: number;
@@ -55,66 +57,32 @@ export function NarrativeView({
     mob: string;
   } | null>(null);
 
+  const evalCtx: EvaluationContext = {
+    hero,
+    game: game || ({
+      sandbox: { forestCleared, mineCleared },
+      narrative: { visitedPassages, currentPassageId },
+      openWorld: { questFlags: {}, discoveredRegions: [], discoveredPoiIds: [], counters: {} },
+    } as any),
+    onGainMaterial,
+  };
+
   useEffect(() => {
     setDiceCheckResult(null);
     setTableRollResult(null);
+
     if (!visitedPassages.includes(passage.id)) {
       visitedPassages.push(passage.id);
-      if (passage.autoGrant) {
-        applyReward(passage.autoGrant);
-        setGrantNotice(passage.autoGrant.message || 'Discovered new resources!');
-      } else {
-        setGrantNotice(null);
+      if (passage.onEnterMutations?.length) {
+        applyMutations(passage.onEnterMutations, evalCtx);
       }
       onUpdate();
-    } else {
-      setGrantNotice(null);
     }
   }, [currentPassageId]);
 
-  const applyReward = (reward: PassageReward) => {
-    if (reward.materials) {
-      for (const [mat, qty] of Object.entries(reward.materials) as [TrackedMaterial, number][]) {
-        onGainMaterial(mat, qty);
-      }
-    }
-    if (reward.equipment) {
-      for (const item of reward.equipment) {
-        if (!hero.hasItem(item)) {
-          hero.addEquipment(item);
-        }
-      }
-    }
-    if (reward.healthDelta) {
-      hero.changeHealth(reward.healthDelta);
-    }
-    onUpdate();
-  };
-
   const checkRequirement = (choice: PassageChoice): { allowed: boolean; reason?: string } => {
-    if (choice.requiresItem && !hero.hasItem(choice.requiresItem)) {
-      return { allowed: false, reason: `Requires: ${choice.requiresItem}` };
-    }
-    if (choice.requiresMaterial) {
-      const held = hero.materials[choice.requiresMaterial.material] || 0;
-      if (held < choice.requiresMaterial.count) {
-        return {
-          allowed: false,
-          reason: `Requires: ${choice.requiresMaterial.count}x ${choice.requiresMaterial.material}`,
-        };
-      }
-    }
-    if (choice.requiresGrovesCleared && forestCleared < choice.requiresGrovesCleared) {
-      return {
-        allowed: false,
-        reason: `Requires ${choice.requiresGrovesCleared} Groves Cleared (${forestCleared}/${choice.requiresGrovesCleared})`,
-      };
-    }
-    if (choice.requiresMinesCleared && mineCleared < choice.requiresMinesCleared) {
-      return {
-        allowed: false,
-        reason: `Requires ${choice.requiresMinesCleared} Mines Cleared (${mineCleared}/${choice.requiresMinesCleared})`,
-      };
+    if (choice.condition && !evaluateCondition(choice.condition, evalCtx)) {
+      return { allowed: false, reason: choice.lockedReason || 'Locked' };
     }
     return { allowed: true };
   };
@@ -122,15 +90,12 @@ export function NarrativeView({
   const handleExecuteChoice = (choice: PassageChoice) => {
     const { allowed } = checkRequirement(choice);
     if (!allowed) return;
-    if (choice.consumeMaterial) {
-      hero.adjustMaterial(choice.consumeMaterial.material, -choice.consumeMaterial.count);
+
+    if (choice.mutations) {
+      applyMutations(choice.mutations, evalCtx);
+      onUpdate();
     }
-    if (choice.consumeItem) {
-      hero.removeEquipment(choice.consumeItem);
-    }
-    if (choice.grantReward) {
-      applyReward(choice.grantReward);
-    }
+
     if (choice.type === 'dice_check' && choice.diceCheck) {
       const roll = Math.floor(Math.random() * 6) + 1;
       const passed = roll >= choice.diceCheck.target;
@@ -148,6 +113,7 @@ export function NarrativeView({
       });
       return;
     }
+
     if (choice.type === 'combat') {
       const victoryId = choice.onVictoryPassageId || choice.targetPassageId;
       const defeatId = choice.onDefeatPassageId || 'combat_defeat';
@@ -159,10 +125,12 @@ export function NarrativeView({
       }
       return;
     }
+
     if (choice.type === 'view' && choice.targetView) {
       onNavigateView(choice.targetView);
       return;
     }
+
     if (choice.targetPassageId) {
       onPassageChange(choice.targetPassageId);
     }
@@ -178,6 +146,12 @@ export function NarrativeView({
     }
   };
 
+  const renderedChoices = passage.choices.filter((choice) => {
+    const { allowed } = checkRequirement(choice);
+    const behavior = choice.behavior || 'disable';
+    return allowed || behavior !== 'hide';
+  });
+
   return (
     <section class="view-panel active">
       <PixelFrame
@@ -185,11 +159,6 @@ export function NarrativeView({
         icon={passage.icon ? (passage.icon as IconName) : undefined}
       >
         <p class="narrative-prose">{passage.text}</p>
-        {grantNotice && (
-          <div class="narrative-banner grant-banner">
-            <Icon name="spark" /> <strong>{grantNotice}</strong>
-          </div>
-        )}
 
         {passage.triggerCombat && (
           <div class="narrative-combat-box">
@@ -297,7 +266,7 @@ export function NarrativeView({
         <div style={{ marginTop: '24px' }}>
           <span class="narrative-section-tag">WHAT WILL YOU DO?</span>
           <div class="narrative-choices-grid">
-            {passage.choices.map((choice, idx) => {
+            {renderedChoices.map((choice, idx) => {
               const { allowed, reason } = checkRequirement(choice);
               return (
                 <button
@@ -313,9 +282,6 @@ export function NarrativeView({
                     {choice.text}
                   </span>
                   {!allowed && reason && <span class="choice-badge badge-locked">[{reason}]</span>}
-                  {allowed && choice.requiresItem && (
-                    <span class="choice-badge badge-ready">[ Has {choice.requiresItem}]</span>
-                  )}
                 </button>
               );
             })}
