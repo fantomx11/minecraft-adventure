@@ -1,5 +1,5 @@
 import type { Mutation } from '../../types/world';
-import { EQUIPMENT_DEFINITIONS, TRACKED_MATERIALS } from '../../data/recipes';
+import { TRACKED_MATERIALS } from '../../data/recipes';
 
 interface MutationListEditorProps {
   mutations: Mutation[] | undefined;

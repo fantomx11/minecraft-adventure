@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'preact/hooks';
 import { Character } from './models/Character';
-import { TrackedMaterial } from './types/inventory';
+import type { TrackedMaterial } from './types/inventory';
 import type { GameModeId, GameProgressionState, GameSaveData } from './types/game';
 import { CUSTOM_STORY_STORAGE_KEY, getInitialStoryPassages, STORY_PASSAGES, validateNarrative } from './data/storyPassages';
 import { getModeController } from './controllers';
@@ -19,10 +19,10 @@ import {
   OptionsDrawer,
   MaterialSwapModal,
 } from './components';
-import { Passage } from './types/narrative';
+import type { Passage } from './types/narrative';
 import type { EngineContext } from './types/controller';
 import { CUSTOM_WORLD_STORAGE_KEY, getInitialWorldPackage, REGIONS, validateWorldPackage } from './data/regions';
-import { Region } from './types/world';
+import type { Region } from './types/world';
 
 const STORAGE_KEY = 'minecraft_multimode_rpg_data';
 
@@ -36,7 +36,6 @@ export function App() {
     }
   });
 
-  // Keep hero in state so the instance is stable across renders
   const [hero, setHero] = useState<Character>(() => new Character(saveData.character));
   const [game, setGame] = useState<GameProgressionState>(saveData.game);
 
@@ -49,7 +48,6 @@ export function App() {
   const [isCustomWorld, setIsCustomWorld] = useState(() => localStorage.getItem(CUSTOM_WORLD_STORAGE_KEY) !== null);
   const [, setTick] = useState(0);
 
-  // Lazy load world & narrative collections
   const [regions, setRegions] = useState<Record<string, Region>>(() => getInitialWorldPackage().regions);
   const [storyPassages, setStoryPassages] = useState<Record<string, Passage>>(() => {
     return saveData.game.mode === 'open_world' ? getInitialWorldPackage().passages : getInitialStoryPassages();
@@ -61,7 +59,6 @@ export function App() {
     setTick((t) => t + 1);
   }, [hero, game]);
 
-  // Automatically cleans up the old subscription and attaches to the new hero
   useEffect(() => {
     const unsubscribe = hero.subscribe(() => {
       saveState();
@@ -131,6 +128,7 @@ export function App() {
         {game.activeView === 'poi_node' && (
           <PoiNodeView
             hero={hero}
+            game={game}
             state={game.openWorld}
             onUpdate={saveState}
             onNavigateView={engineContext.setActiveView}

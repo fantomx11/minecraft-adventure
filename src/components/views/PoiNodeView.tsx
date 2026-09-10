@@ -7,6 +7,7 @@ import { PixelFrame } from '../ui/PixelFrame';
 import { StatusBar } from '../ui/StatusBar';
 import { Icon } from '../ui/Icon';
 import { evaluateCondition, applyMutations, EvaluationContext } from '../../engine/evaluator';
+import { useObservable } from '../../hooks/useObservable';
 
 interface PoiNodeViewProps {
   hero: Character;
@@ -18,6 +19,7 @@ interface PoiNodeViewProps {
   onTriggerPassage: (passageId: string) => void;
   onGainMaterial: (mat: TrackedMaterial, amt: number) => void;
   onExitToMap: () => void;
+  game?: GameProgressionState;
 }
 
 export function PoiNodeView({
@@ -30,7 +32,10 @@ export function PoiNodeView({
   onTriggerPassage,
   onGainMaterial,
   onExitToMap,
+  game,
 }: PoiNodeViewProps) {
+  useObservable(hero);
+
   const currentRegion = regions[state.currentRegionId] || REGIONS[state.currentRegionId] || Object.values(regions)[0];
   const currentPoi: PointOfInterest | undefined = currentRegion.pointsOfInterest.find(
     (p) => p.id === state.currentPoiId
@@ -53,7 +58,11 @@ export function PoiNodeView({
 
   const evalCtx: EvaluationContext = {
     hero,
-    game: { openWorld: state } as GameProgressionState,
+    game: game || ({
+      openWorld: state,
+      narrative: { visitedPassages: [], currentPassageId: '' },
+      sandbox: { forestCleared: 0, mineCleared: 0 },
+    } as any),
     onGainMaterial,
   };
 

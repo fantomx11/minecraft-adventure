@@ -2,6 +2,7 @@ import { Entity, EntityData } from './Entity';
 import { getEquipmentItem } from '../data/recipes';
 import type { Item } from './Item';
 import type { TrackedMaterial, EquippedSlots, InventoryRule } from '../types/inventory';
+import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
 
 export interface SerializedCharacter extends EntityData {
   restarts: number;
@@ -33,18 +34,16 @@ const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
   Fish: 0,
 };
 
-export class Character extends Entity {
+export class Character extends Entity implements CombatLifecycleHooks {
   #data: CharacterData;
 
   constructor(initialData?: Partial<SerializedCharacter>) {
-    // 1. Initialize Entity vitals
     super(
       initialData?.name || 'Steve',
-      20,
-      initialData?.hearts ?? 20
+      initialData?.maxHearts ?? 20,
+      initialData?.hearts ?? initialData?.health ?? 20
     );
 
-    // 2. Initialize Character-specific state in its own disjoint #data store
     this.#data = this.createReactiveStore({
       restarts: Math.max(0, initialData?.restarts ?? 0),
       materialRule: initialData?.materialRule || 'total',
@@ -83,6 +82,12 @@ export class Character extends Entity {
     return this.#data.equipmentInventoryIds;
   }
 
+  public get equipmentInventory(): Item[] {
+    return this.#data.equipmentInventoryIds
+      .map((name) => getEquipmentItem(name))
+      .filter((item): item is Item => item !== undefined);
+  }
+
   public get equipped(): EquippedSlots {
     return this.#data.equipped;
   }
@@ -102,6 +107,10 @@ export class Character extends Entity {
 
   public get equippedPickaxe(): Item | undefined {
     return this.#data.equipped.pickaxe ? getEquipmentItem(this.#data.equipped.pickaxe) : undefined;
+  }
+
+  public get equippedKey(): Item | undefined {
+    return this.#data.equipped.key ? getEquipmentItem(this.#data.equipped.key) : undefined;
   }
 
   public get attack(): number {
@@ -128,6 +137,15 @@ export class Character extends Entity {
     );
   }
 
+  public canCraft(cost: Partial<Record<TrackedMaterial, number>>): boolean {
+    for (const [mat, required] of Object.entries(cost) as [TrackedMaterial, number][]) {
+      if ((this.#data.materials[mat] || 0) < (required || 0)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   public addEquipment(itemName: string): void {
     this.#data.equipmentInventoryIds.push(itemName);
   }
@@ -139,7 +157,6 @@ export class Character extends Entity {
       return true;
     }
 
-    // Check equipped slots if not in loose inventory
     for (const [slot, name] of Object.entries(this.#data.equipped)) {
       if (name === itemName) {
         this.#data.equipped[slot as keyof EquippedSlots] = null;
@@ -152,13 +169,11 @@ export class Character extends Entity {
   public equip(slot: keyof EquippedSlots, itemName: string): boolean {
     if (!this.#data.equipmentInventoryIds.includes(itemName)) return false;
 
-    // Unequip existing item to inventory
     const current = this.#data.equipped[slot];
     if (current) {
       this.#data.equipmentInventoryIds.push(current);
     }
 
-    // Remove from inventory and place into slot
     const itemIdx = this.#data.equipmentInventoryIds.indexOf(itemName);
     this.#data.equipmentInventoryIds.splice(itemIdx, 1);
     this.#data.equipped[slot] = itemName;
@@ -181,10 +196,38 @@ export class Character extends Entity {
     return next - current;
   }
 
+  public respawn(): void {
+    this.resetHealth();
+    this.restarts += 1;
+  }
+
+  // --- Combat Lifecycle Hook Forwarding ---
+  public onCombatStart(ctx: CombatContext): void { this.#dispatchItemHooks('onCombatStart', ctx); }
+  public onRoundStart(ctx: CombatContext): void { this.#dispatchItemHooks('onRoundStart', ctx); }
+  public onRollEvaluated(ctx: CombatContext): void { this.#dispatchItemHooks('onRollEvaluated', ctx); }
+  public onDealDamage(ctx: CombatContext): void { this.#dispatchItemHooks('onDealDamage', ctx); }
+  public onReceiveDamage(ctx: CombatContext): void { this.#dispatchItemHooks('onReceiveDamage', ctx); }
+  public onRoundEnd(ctx: CombatContext): void { this.#dispatchItemHooks('onRoundEnd', ctx); }
+  public onDeath(ctx: CombatContext): void { this.#dispatchItemHooks('onDeath', ctx); }
+  public onCombatEnd(ctx: CombatContext): void { this.#dispatchItemHooks('onCombatEnd', ctx); }
+
+  #dispatchItemHooks(hook: keyof CombatLifecycleHooks, ctx: CombatContext): void {
+    const items = [
+      this.equippedWeapon,
+      this.equippedArmor,
+      this.equippedPickaxe,
+      this.equippedKey,
+    ];
+    for (const item of items) {
+      item?.hooks?.[hook]?.(ctx);
+    }
+  }
+
   // --- Serialization ---
   public override toJSON(): SerializedCharacter {
     return {
       ...super.toJSON(),
+      health: this.hearts,
       restarts: this.restarts,
       equipmentInventoryIds: [...this.#data.equipmentInventoryIds],
       equipped: { ...this.#data.equipped },

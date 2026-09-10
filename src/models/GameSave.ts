@@ -1,5 +1,5 @@
 import type { GameSaveData, GameProgressionState } from '../types/game';
-import { SerializedCharacter } from "./Character";
+import type { SerializedCharacter } from "./Character";
 
 interface GameSaveBase<T extends string, U> {
   character: SerializedCharacter;
@@ -22,7 +22,7 @@ export interface NarrativeData {
 export type NarrativeGameSave = GameSaveBase<"narrative", NarrativeData>;
 
 export interface OpenWorldData {
-currentRegionId: string;
+  currentRegionId: string;
   currentPoiId: string | null;
   currentNodeId: string | null;
   discoveredRegions: string[];
@@ -34,7 +34,7 @@ currentRegionId: string;
 
 export type OpenWorldGameSave = GameSaveBase<"open_world", OpenWorldData>;
 
-export type GameSave = SandboxGameSave | NarrativeGameSave | OpenWorldGameSave
+export type GameSave = SandboxGameSave | NarrativeGameSave | OpenWorldGameSave;
 
 export function initGameSave<T extends GameSave["type"]>(
   type: T,
@@ -91,6 +91,8 @@ export function migrateSaveData(raw: any): GameSaveData {
       version: 2,
       character: {
         name: 'Steve',
+        hearts: 20,
+        maxHearts: 20,
         health: 20,
         restarts: 0,
         equipmentInventoryIds: ['Wooden Pickaxe'],

@@ -5,6 +5,7 @@ export interface EntityData {
   name: string;
   hearts: number;
   maxHearts: number;
+  health?: number;
 }
 
 export abstract class Entity extends Observable {
@@ -15,7 +16,7 @@ export abstract class Entity extends Observable {
     this.#data = this.createReactiveStore({
       name,
       maxHearts,
-      hearts: hearts ?? maxHearts
+      hearts: hearts ?? maxHearts,
     });
   }
 
@@ -50,12 +51,20 @@ export abstract class Entity extends Observable {
     this.hearts = val;
   }
 
+  public setHealth(val: number): void {
+    this.hearts = val;
+  }
+
   public get isDead(): boolean {
     return this.hearts <= 0;
   }
 
   public get isAlive(): boolean {
     return this.hearts > 0;
+  }
+
+  public isDefeated(): boolean {
+    return this.isDead;
   }
 
   // --- Domain Logic ---
@@ -84,15 +93,12 @@ export abstract class Entity extends Observable {
     return { appliedTotal, details };
   }
 
-  public isDefeated(): boolean {
-    return this.isDead;
-  }
-
   public toJSON(): EntityData {
     return {
       name: this.name,
       hearts: this.hearts,
       maxHearts: this.maxHearts,
+      health: this.hearts,
     };
   }
 }

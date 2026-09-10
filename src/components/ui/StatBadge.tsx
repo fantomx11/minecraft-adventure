@@ -5,7 +5,7 @@ import { IconName } from '../../data/icons';
 interface StatBadgeProps {
   icon: IconName;
   label?: string;
-  value: ComponentChildren
+  value: ComponentChildren;
 }
 
 export function StatBadge({ icon, label, value }: StatBadgeProps) {
