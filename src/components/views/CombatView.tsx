@@ -15,6 +15,7 @@ interface CombatViewProps {
   hero: Character;
   onUpdate: () => void;
   initialMobName?: string;
+  onExitCombat?: (outcome: 'victory' | 'defeat') => void;
   narrativeContext?: {
     victoryPassageId?: string;
     defeatPassageId?: string;
@@ -22,11 +23,16 @@ interface CombatViewProps {
   };
 }
 
-export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }: CombatViewProps) {
+export function CombatView({
+  hero,
+  onUpdate,
+  initialMobName,
+  onExitCombat,
+  narrativeContext,
+}: CombatViewProps) {
   const [selectedMobName, setSelectedMobName] = useState<string>(
     initialMobName || BESTIARY[0].name
   );
-
   const [engine, setEngine] = useState<CombatEngine>(() => {
     const config = BESTIARY.find((m) => m.name === (initialMobName || BESTIARY[0].name)) || BESTIARY[0];
     const createdMob = new Mob(config);
@@ -34,7 +40,6 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
     eng.initCombat();
     return eng;
   });
-
   const [combatStatus, setCombatStatus] = useState<'ongoing' | 'victory' | 'defeat'>('ongoing');
   const [logs, setLogs] = useState<CombatMessage[]>([
     { type: 'notice', text: 'Encounter initialized. Choose dice & roll!' },
@@ -71,7 +76,6 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
     }
 
     const roundRes = engine.executeRound(rolls.length, activeMob.defense, rolls);
-
     const newMsgs: CombatMessage[] = [
       {
         type: 'notice',
@@ -79,6 +83,7 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
       },
       ...engine.ctx.roundState.messages,
     ];
+    engine.ctx.roundState.messages = [];
 
     if (roundRes.heroDmgRes && roundRes.heroDmgRes.appliedTotal > 0) {
       newMsgs.push({ type: 'hit', text: `Hero dealt ${roundRes.heroDmgRes.appliedTotal} DMG to ${activeMob.name}.` });
@@ -89,6 +94,14 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
 
     if (roundRes.status === 'victory') {
       setCombatStatus('victory');
+      if (engine.ctx.combatState.pendingDiamondReward) {
+        hero.adjustMaterial('Diamond', engine.ctx.combatState.pendingDiamondReward);
+        newMsgs.push({
+          type: 'special',
+          text: `💎 Looted +${engine.ctx.combatState.pendingDiamondReward} Diamond(s) earned from Critical Hits!`,
+        });
+        engine.ctx.combatState.pendingDiamondReward = 0;
+      }
       newMsgs.push({ type: 'special', text: `VICTORY! ${activeMob.name} defeated!` });
     } else if (roundRes.status === 'defeat') {
       setCombatStatus('defeat');
@@ -97,7 +110,6 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
 
     setLogs((prev) => [...newMsgs, ...prev].slice(0, 40));
     onUpdate();
-
     return rolls.map((roll) => ({
       value: roll,
       tag: roll >= activeMob.defense ? 'HIT' : 'MISS',
@@ -105,11 +117,40 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
     }));
   };
 
+  const handleCritHitChoice = (option: number) => {
+    engine.applyCritHitEffect(option);
+    engine.ctx.roundState.pendingCritHitPick = false;
+
+    const newMsgs: CombatMessage[] = [...engine.ctx.roundState.messages];
+    engine.ctx.roundState.messages = [];
+
+    const activeMob = engine.ctx.combatState.mob;
+    const isNowVictorious = combatStatus === 'victory' || activeMob.isDefeated();
+
+    if (isNowVictorious) {
+      if (combatStatus !== 'victory') {
+        setCombatStatus('victory');
+        engine.dispatchHook('onCombatEnd');
+        newMsgs.push({ type: 'special', text: `VICTORY! ${activeMob.name} defeated!` });
+      }
+      if (engine.ctx.combatState.pendingDiamondReward) {
+        hero.adjustMaterial('Diamond', engine.ctx.combatState.pendingDiamondReward);
+        newMsgs.push({
+          type: 'special',
+          text: `💎 Looted +${engine.ctx.combatState.pendingDiamondReward} Diamond(s) earned from Critical Hits!`,
+        });
+        engine.ctx.combatState.pendingDiamondReward = 0;
+      }
+    }
+
+    setLogs((prev) => [...newMsgs, ...prev].slice(0, 40));
+    onUpdate();
+  };
+
   const handleLootRoll = (rolls: number[]): DieItem[] => {
-    const roll = rolls[0];
+    const roll = engine.ctx.combatState.guaranteedLootRoll || rolls[0];
     const activeMob = engine.ctx.combatState.mob;
     const result = activeMob.onLootRoll(roll);
-
     if (result.won) {
       result.apply?.(hero);
       setLogs((prev) => [
@@ -122,10 +163,8 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
         ...prev,
       ]);
     }
-
     setLootClaimed(true);
     onUpdate();
-
     return [
       {
         value: roll,
@@ -139,9 +178,11 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
   const isVictorious = combatStatus === 'victory' || mob.isDefeated();
   const isDefeated = combatStatus === 'defeat' || (!isVictorious && hero.isDefeated());
   const maxAllowedDice = Math.max(1, hero.attack);
+  const isPendingCritPick = Boolean(engine.ctx.roundState.pendingCritHitPick);
 
   return (
     <section class="view-panel active">
+      {/* Top Banner: Story Navigation */}
       {narrativeContext && (
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
           <button
@@ -149,7 +190,7 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
             class="pixel-btn"
             onClick={() => narrativeContext.onReturnToNarrative?.()}
           >
-            ← RETREAT TO STORY
+            RETREAT TO STORY
           </button>
           {isVictorious && narrativeContext.victoryPassageId && (
             <button
@@ -164,9 +205,48 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
             <button
               type="button"
               class="pixel-btn btn-danger"
-              onClick={() => narrativeContext.onReturnToNarrative?.(narrativeContext.defeatPassageId || 'combat_defeat')}
+              onClick={() =>
+                narrativeContext.onReturnToNarrative?.(
+                  narrativeContext.defeatPassageId || 'combat_defeat'
+                )
+              }
             >
               CONTINUE STORY (DEFEAT)
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Top Banner: Open World Navigation */}
+      {!narrativeContext && onExitCombat && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+          {!isVictorious && !isDefeated && (
+            <button
+              type="button"
+              class="pixel-btn"
+              onClick={() => onExitCombat('defeat')}
+            >
+              FLEE BATTLE
+            </button>
+          )}
+          {isVictorious && (
+            <button
+              type="button"
+              class="pixel-btn btn-success"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => onExitCombat('victory')}
+            >
+              LEAVE BATTLE (VICTORY)
+            </button>
+          )}
+          {isDefeated && (
+            <button
+              type="button"
+              class="pixel-btn btn-danger"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => onExitCombat('defeat')}
+            >
+              RESPAWN AT CAMP (DEFEAT)
             </button>
           )}
         </div>
@@ -188,27 +268,36 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
             ))}
           </select>
         </div>
-
         <div class="mob-stats-grid">
           <StatField icon="heartFull" label="HEARTS" value={`${mob.hearts}/${mob.maxHearts}`} />
           <StatField icon="chestplate" label="DEFENSE" value={mob.defense} />
           <StatField icon="tnt" label="DAMAGE" value={mob.damage} />
         </div>
-
         <StatusBar>
-          Status: {engine.ctx.combatState.effects.length > 0
-            ? `[ ${engine.ctx.combatState.effects.map((e) => (e as any).name || 'Effect').join(' | ')} ]` : isVictorious
-              ? 'Encounter Won' : isDefeated
-                ? 'Encounter Lost' : 'Active Combat'}
+          Status:{' '}
+          {engine.ctx.combatState.effects.length > 0
+            ? `[ ${engine.ctx.combatState.effects.map((e) => (e as any).name || 'Effect').join(' | ')} ]`
+            : isVictorious
+            ? 'Encounter Won'
+            : isDefeated
+            ? 'Encounter Lost'
+            : 'Active Combat'}
         </StatusBar>
       </PixelFrame>
 
       {/* Middle Grid: Dice Roller & Mob Rules */}
       <div class="combat-middle-grid">
-        {/* Swaps between Action Roller and Loot Drop based on mob defeat */}
         <PixelFrame
-          title={isDefeated ? 'DEFEAT' : isVictorious ? 'LOOT DROP' : 'ACTION ROLLER'}
-          icon={isDefeated ? 'tnt' : isVictorious ? 'spark' : 'target'}
+          title={
+            isDefeated
+              ? 'DEFEAT'
+              : isPendingCritPick
+              ? 'CRITICAL HIT'
+              : isVictorious
+              ? 'LOOT DROP'
+              : 'ACTION ROLLER'
+          }
+          icon={isDefeated ? 'tnt' : isPendingCritPick || isVictorious ? 'spark' : 'target'}
         >
           {isDefeated ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -231,11 +320,54 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
                 >
                   CONTINUE STORY (FAILURE)
                 </button>
+              ) : onExitCombat ? (
+                <button
+                  type="button"
+                  class="pixel-btn btn-danger"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={() => onExitCombat('defeat')}
+                >
+                  ACCEPT DEFEAT & RESPAWN
+                </button>
               ) : (
                 <button type="button" class="pixel-btn" onClick={() => initMobEncounter(mob.name)}>
                   TRY AGAIN
                 </button>
               )}
+            </div>
+          ) : isPendingCritPick ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <p style={{ color: 'var(--pixel-yellow)', fontSize: '12px', margin: '0 0 4px 0' }}>
+                ⭐ QUADRUPLE HIT! Pick your Critical Hit reward:
+              </p>
+              <button
+                type="button"
+                class="pixel-btn btn-success"
+                onClick={() => handleCritHitChoice(1)}
+              >
+                1: INSTANT WIN
+              </button>
+              <button
+                type="button"
+                class="pixel-btn"
+                onClick={() => handleCritHitChoice(2)}
+              >
+                2-3: GUARANTEE 6 ON LOOT
+              </button>
+              <button
+                type="button"
+                class="pixel-btn"
+                onClick={() => handleCritHitChoice(4)}
+              >
+                4-5: GAIN 1 DIAMOND
+              </button>
+              <button
+                type="button"
+                class="pixel-btn btn-primary"
+                onClick={() => handleCritHitChoice(6)}
+              >
+                6: GAIN 2 DIAMONDS
+              </button>
             </div>
           ) : isVictorious ? (
             <div>
@@ -249,7 +381,7 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
                 disabled={lootClaimed}
                 onRoll={handleLootRoll}
               />
-              {narrativeContext?.victoryPassageId && (
+              {narrativeContext?.victoryPassageId ? (
                 <button
                   type="button"
                   class={`pixel-btn ${lootClaimed ? 'btn-success' : 'btn-active'}`}
@@ -258,7 +390,16 @@ export function CombatView({ hero, onUpdate, initialMobName, narrativeContext }:
                 >
                   {lootClaimed ? 'CONTINUE STORY (VICTORY)' : 'SKIP LOOT & CONTINUE'}
                 </button>
-              )}
+              ) : onExitCombat ? (
+                <button
+                  type="button"
+                  class={`pixel-btn ${lootClaimed ? 'btn-success' : 'btn-active'}`}
+                  style={{ width: '100%', marginTop: '12px', justifyContent: 'center' }}
+                  onClick={() => onExitCombat('victory')}
+                >
+                  {lootClaimed ? 'LEAVE BATTLE' : 'SKIP LOOT & LEAVE'}
+                </button>
+              ) : null}
             </div>
           ) : (
             <DiceRoller

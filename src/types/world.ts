@@ -12,21 +12,21 @@ export interface TravelRequest {
 export interface TravelCost {
   materials?: Partial<Record<TrackedMaterial, number>>;
   healthDelta?: number;
-  counterDeltas?: Record<string, number>; // e.g. { timeHours: 4, exhaustion: 1 }
+  counterDeltas?: Record<string, number>;
 }
 
 export interface TravelOutcome {
   success: boolean;
   costApplied?: TravelCost;
-  combatMob?: string;              // If an encounter interrupts travel
-  narrativePassageId?: string;     // If a random roadside event occurs
+  combatMob?: string;
+  narrativePassageId?: string;
   logMessages: string[];
 }
 
 export interface TravelResolver {
   canTravel(hero: Character, state: OpenWorldProgression, req: TravelRequest): {
     allowed: boolean;
-    reason?: string
+    reason?: string;
   };
   resolveTravel(
     hero: Character,
@@ -36,19 +36,19 @@ export interface TravelResolver {
 }
 
 export interface POINodeExit {
-  targetNodeId?: string;       // Next room/node in the POI
-  exitToRegion?: boolean;      // Leaves the POI back to the region map
-  label: string;               // e.g., "Descend to Crypts", "Exit to Forest"
-  requiresItem?: string;       // e.g., "Iron Key"
+  targetNodeId?: string;
+  exitToRegion?: boolean;
+  label: string;
+  requiresItem?: string;
   requiresFlags?: Record<string, any>;
 }
 
 export interface ActionCondition {
-  requiresItem?: string;                         // e.g. "Torch", "Skeleton Key"
-  requiresMaterial?: { material: TrackedMaterial; count: number }; //
-  requiresFlags?: Record<string, any>;           // World / quest state
-  prohibitedFlags?: string[];                    // Hides or locks if completed
-  hiddenUntilMet?: boolean;                      // True = invisible until met; False = visible but grayed out
+  requiresItem?: string;
+  requiresMaterial?: { material: TrackedMaterial; count: number };
+  requiresFlags?: Record<string, any>;
+  prohibitedFlags?: string[];
+  hiddenUntilMet?: boolean;
 }
 
 export interface POIRepeatableAction {
@@ -64,7 +64,7 @@ export interface POIQuestHook {
   id: string;
   questId: string;
   label: string;
-  passageId: string;           // Fires up the narrative engine
+  passageId: string;
   requiredFlags?: Record<string, any>;
   prohibitedFlags?: string[];
 }
@@ -85,6 +85,9 @@ export interface PointOfInterest {
   description: string;
   entryNodeId: string;
   nodes: Record<string, POINode>;
+  hidden?: boolean;
+  minTrekTotal?: number;
+  discoveryLog?: string;
 }
 
 export interface Region {
@@ -92,9 +95,9 @@ export interface Region {
   name: string;
   description: string;
   biome: 'forest' | 'plains' | 'mountains' | 'ocean' | 'swamp' | 'desert';
-  adjacentRegionIds: string[];  // Graph edges for walking
-  encounterTable: MobTableEntry[]; // Random encounters on travel/explore
-  dangerLevel: number;          // Modifies encounter odds / mob tier
+  adjacentRegionIds: string[];
+  encounterTable: MobTableEntry[];
+  dangerLevel: number;
   pointsOfInterest: PointOfInterest[];
   accessibleViews?: ('forest' | 'mining' | 'crafting')[];
 }

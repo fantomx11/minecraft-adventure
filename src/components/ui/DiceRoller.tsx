@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { DiceTray } from './DiceTray';
 import { DieItem } from '../../types/dice';
 
@@ -30,6 +30,12 @@ export function DiceRoller({
   const [rolls, setRolls] = useState<number[]>([]);
   const [diceItems, setDiceItems] = useState<DieItem[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (maxDice) {
+      setSelectableCount(maxDice);
+    }
+  }, [maxDice]);
 
   const totalDiceToRoll = fixedDiceCount ?? selectableCount;
   const neededPicks = Math.min(pickCount ?? totalDiceToRoll, totalDiceToRoll);

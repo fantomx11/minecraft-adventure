@@ -2,6 +2,7 @@ import type { Character } from '../models/Character';
 import type { GameProgressionState, ActiveView, GameModeId } from './game';
 import type { Passage } from './narrative';
 import type { TrackedMaterial } from './inventory';
+import { Region } from './world';
 
 export interface ReturnBannerDescriptor {
   label: string;
@@ -18,6 +19,7 @@ export interface EngineContext {
   hero: Character;
   game: GameProgressionState;
   passages: Record<string, Passage>;
+  regions: Record<string, Region>; // Added
   saveState: () => void;
   setActiveView: (view: ActiveView) => void;
   setPendingMaterial: (mat: TrackedMaterial | null) => void;

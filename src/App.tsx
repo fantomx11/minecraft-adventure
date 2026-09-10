@@ -1,9 +1,10 @@
 import { useState } from 'preact/hooks';
 import { Character } from './models/Character';
 import { TrackedMaterial } from './types/inventory';
-import { GameModeId } from './types/game';
+import type { GameModeId, GameProgressionState, GameSaveData } from './types/game';
 import { CUSTOM_STORY_STORAGE_KEY, getInitialStoryPassages, STORY_PASSAGES, validateNarrative } from './data/storyPassages';
 import { getModeController } from './controllers';
+import { migrateSaveData } from './models/GameSave';
 import {
   HudBar,
   ModeNavBar,
@@ -12,22 +13,30 @@ import {
   MiningView,
   CraftingView,
   NarrativeView,
+  WorldMapView,
+  PoiNodeView,
   CharacterSheetDrawer,
   OptionsDrawer,
   MaterialSwapModal,
 } from './components';
 import { Passage } from './types/narrative';
 import type { EngineContext } from './types/controller';
+import { CUSTOM_WORLD_STORAGE_KEY, getInitialRegions, REGIONS, validateWorld } from './data/regions';
+import { Region } from './types/world';
 
 const STORAGE_KEY = 'minecraft_multimode_rpg_data';
 
 export function App() {
-  const [saveData, setSaveData] = useState(() => {
-    return localStorage.getItem(STORAGE_KEY) || {};
+  const [saveData] = useState<GameSaveData>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return migrateSaveData(raw ? JSON.parse(raw) : null);
+    } catch {
+      return migrateSaveData(null);
+    }
   });
-
   const [hero, setHero] = useState<Character>(() => new Character(saveData.character));
-  const [game, setGame] = useState(saveData.game);
+  const [game, setGame] = useState<GameProgressionState>(saveData.game);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [targetMobName, setTargetMobName] = useState<string | undefined>(undefined);
@@ -36,6 +45,8 @@ export function App() {
   const [storyPassages, setStoryPassages] = useState<Record<string, Passage>>(getInitialStoryPassages);
   const [isCustomStory, setIsCustomStory] = useState(() => localStorage.getItem(CUSTOM_STORY_STORAGE_KEY) !== null);
   const [, setTick] = useState(0);
+  const [regions, setRegions] = useState<Record<string, Region>>(getInitialRegions);
+  const [isCustomWorld, setIsCustomWorld] = useState(() => localStorage.getItem(CUSTOM_WORLD_STORAGE_KEY) !== null);
 
   const saveState = () => {
     const updated = { version: 2, character: hero.toJSON(), game };
@@ -49,6 +60,7 @@ export function App() {
     hero,
     game,
     passages: storyPassages,
+    regions,
     saveState,
     setActiveView: (v) => {
       game.activeView = v;
@@ -85,6 +97,44 @@ export function App() {
       )}
 
       <main class="arena-container">
+        {game.activeView === 'world_map' && (
+          <WorldMapView
+            hero={hero}
+            state={game.openWorld}
+            onUpdate={saveState}
+            onNavigateCombat={(mob) => handleTriggerCombat(mob)}
+            onEnterPoi={(poiId, entryNodeId) => {
+              game.openWorld.currentPoiId = poiId;
+              game.openWorld.currentNodeId = entryNodeId;
+              game.openWorld.counters.trekBonus = 0;
+              engineContext.setActiveView('poi_node');
+            }}
+            onGainMaterial={(mat, amt) => controller.handleGainMaterial(mat, amt ?? 1, engineContext)}
+            regions={regions}
+          />
+        )}
+
+        {game.activeView === 'poi_node' && (
+          <PoiNodeView
+            hero={hero}
+            state={game.openWorld}
+            onUpdate={saveState}
+            onNavigateView={engineContext.setActiveView}
+            onTriggerCombat={(mob) => handleTriggerCombat(mob)}
+            onTriggerPassage={(passageId) => {
+              game.narrative.currentPassageId = passageId;
+              engineContext.setActiveView('narrative');
+            }}
+            onGainMaterial={(mat, amt) => controller.handleGainMaterial(mat, amt ?? 1, engineContext)}
+            onExitToMap={() => {
+              game.openWorld.currentPoiId = null;
+              game.openWorld.currentNodeId = null;
+              engineContext.setActiveView('world_map');
+            }}
+            regions={regions}
+          />
+        )}
+
         {game.activeView === 'narrative' && (
           <NarrativeView
             hero={hero}
@@ -109,19 +159,20 @@ export function App() {
             hero={hero}
             onUpdate={saveState}
             initialMobName={targetMobName}
+            onExitCombat={(outcome) => controller.resolveCombatExit(outcome, engineContext, combatContext)}
             narrativeContext={
-              combatContext
+              combatContext?.victoryPassageId || combatContext?.defeatPassageId
                 ? {
-                    victoryPassageId: combatContext.victoryPassageId,
-                    defeatPassageId: combatContext.defeatPassageId,
-                    onReturnToNarrative: (targetId) => {
-                      controller.resolveCombatExit(
-                        targetId === combatContext.victoryPassageId ? 'victory' : 'defeat',
-                        engineContext,
-                        combatContext
-                      );
-                    },
-                  }
+                  victoryPassageId: combatContext.victoryPassageId,
+                  defeatPassageId: combatContext.defeatPassageId,
+                  onReturnToNarrative: (targetId) => {
+                    controller.resolveCombatExit(
+                      targetId === combatContext.victoryPassageId ? 'victory' : 'defeat',
+                      engineContext,
+                      combatContext
+                    );
+                  },
+                }
                 : undefined
             }
           />
@@ -182,9 +233,11 @@ export function App() {
         onLoad={(raw) => {
           try {
             const loaded = migrateSaveData(JSON.parse(raw));
-            setHero(new Character(loaded.character));
+            const newHero = new Character(loaded.character);
+            setHero(newHero);
             setGame(loaded.game);
-            saveState();
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, character: newHero.toJSON(), game: loaded.game }));
+            setTick((t) => t + 1);
             return true;
           } catch {
             return false;
@@ -207,6 +260,32 @@ export function App() {
           setIsCustomStory(false);
           game.narrative.currentPassageId = 'start';
           game.narrative.visitedPassages = [];
+          saveState();
+        }}
+        regions={regions}
+        isCustomWorld={isCustomWorld}
+        onLoadWorld={(json) => {
+          const validated = validateWorld(JSON.parse(json));
+          if (!validated) return false;
+          setRegions(validated);
+          setIsCustomWorld(true);
+          localStorage.setItem(CUSTOM_WORLD_STORAGE_KEY, JSON.stringify(validated));
+          const firstReg = Object.keys(validated)[0];
+          game.openWorld.currentRegionId = firstReg;
+          game.openWorld.currentPoiId = null;
+          game.openWorld.currentNodeId = null;
+          game.openWorld.discoveredRegions = [firstReg];
+          saveState();
+          return true;
+        }}
+        onResetWorld={() => {
+          localStorage.removeItem(CUSTOM_WORLD_STORAGE_KEY);
+          setRegions(JSON.parse(JSON.stringify(REGIONS)));
+          setIsCustomWorld(false);
+          game.openWorld.currentRegionId = 'plains_settlement';
+          game.openWorld.currentPoiId = null;
+          game.openWorld.currentNodeId = null;
+          game.openWorld.discoveredRegions = ['plains_settlement'];
           saveState();
         }}
       />

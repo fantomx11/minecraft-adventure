@@ -26,11 +26,11 @@ export class SandboxModeController implements GameModeController {
     ctx.saveState();
   }
 
-  public initiateCombat(payload: CombatTriggerPayload, ctx: EngineContext): void {
+  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
     ctx.setActiveView('combat');
   }
 
-  public resolveCombatExit(outcome: 'victory' | 'defeat', ctx: EngineContext): void {
+  public resolveCombatExit(_outcome: 'victory' | 'defeat', ctx: EngineContext): void {
     ctx.setActiveView('combat');
   }
 

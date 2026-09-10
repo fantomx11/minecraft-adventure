@@ -6,7 +6,8 @@
     "dev": "vite",
     "build:game": "vite build",
     "build:editor": "vite build --config vite.config.editor.ts",
-    "build": "npm run build:game && npm run build:editor",
+    "build:world-editor": "vite build --config vite.config.world-editor.ts",
+    "build": "npm run build:game && npm run build:editor && npm run build:world-editor",
     "preview": "vite preview"
   },
   "devDependencies": {

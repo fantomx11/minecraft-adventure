@@ -32,6 +32,7 @@ export interface RoundState {
   preventDeath: boolean;
   dyingEntity: Entity | null;
   vexBanishedThisRound?: boolean;
+  pendingCritHitPick?: boolean; // True when quadruples occur on hits
 }
 
 export interface CombatState {
@@ -41,6 +42,10 @@ export interface CombatState {
   mob: Mob;
   ignoreArmor: boolean;
   heroDmgPenalty: number;
+  heroDmgMultiplier?: number;
+  friendlyMobJoined?: boolean;
+  guaranteedLootRoll?: number;
+  pendingDiamondReward?: number;
 }
 
 export interface CombatContext {

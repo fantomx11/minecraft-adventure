@@ -1,5 +1,4 @@
 import type { SerializedCharacter } from '../models/Character';
-import type { TrackedMaterial } from './inventory';
 
 export type GameModeId = 'sandbox' | 'narrative' | 'open_world';
 

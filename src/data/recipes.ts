@@ -94,6 +94,8 @@ export const EQUIPMENT_DEFINITIONS: EquipmentConfig[] = [
   { name: 'Bucket', type: 'key', description: 'Turns lava pools into solid stone' },
   { name: 'Boat', type: 'key', description: 'Traverse rivers and oceans safely' },
   { name: 'TNT', type: 'key', description: 'Excavate sealed pathways' },
+  { name: 'Compass', type: 'key', description: '+1 Die on Wilderness Exploration' },
+  { name: 'World Map', type: 'key', description: '+1 Die on Wilderness Exploration' },
 ];
 
 export const EQUIPMENT_CATALOG: Record<string, Item> = Object.fromEntries(
@@ -116,9 +118,11 @@ export const CRAFTING_RECIPES: CraftingRecipe[] = [
   { name: 'Diamond Armor', type: 'armor', cost: { Diamond: 4 }, desc: '4 ARM (Flat absorption)' },
   { name: 'Stone Pickaxe', type: 'pickaxe', cost: { Wood: 1, Stone: 2 }, desc: 'Roll 2 dice on Mining Table' },
   { name: 'Iron Pickaxe', type: 'pickaxe', cost: { Wood: 1, Iron: 2 }, desc: 'Roll 3 dice on Mining Table' },
-  { name: 'Diamond Pickaxe', type: 'pickaxe', cost: { Wood: 1, Diamond: 2 }, desc: 'Roll 3 dice & mine Obsidian' },
+  { name: 'Diamond Pickaxe', type: 'pickaxe', cost: { Wood: 1, Diamond: 2 }, desc: 'Roll 4 dice & mine Obsidian' },
   { name: 'Torch', type: 'key', cost: { Wood: 1, Coal: 1 }, desc: 'Explore dark mine shafts' },
   { name: 'Bucket', type: 'key', cost: { Iron: 3 }, desc: 'Cool hazardous lava pools' },
   { name: 'Boat', type: 'key', cost: { Wood: 5 }, desc: 'Navigate open waters' },
   { name: 'TNT', type: 'key', cost: { Gunpowder: 3 }, desc: 'Blast away sealed obstacles' },
+  { name: 'Compass', type: 'key', cost: { Iron: 4, Coal: 1 }, desc: '+1 Wilderness Exploration Die' },
+  { name: 'World Map', type: 'key', cost: { Leather: 2, Wood: 2 }, desc: '+1 Wilderness Exploration Die' },
 ];

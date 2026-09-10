@@ -39,7 +39,7 @@ export class NarrativeModeController implements GameModeController {
     ctx.saveState();
   }
 
-  public initiateCombat(payload: CombatTriggerPayload, ctx: EngineContext): void {
+  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
     ctx.setActiveView('combat');
   }
 

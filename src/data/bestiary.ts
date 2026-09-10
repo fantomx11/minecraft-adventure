@@ -238,8 +238,8 @@ export const BESTIARY: MobConfig[] = [
     hooks: {
       onRollEvaluated: (ctx: CombatContext) => {
         if (ctx.roundState.matchingMisses >= 2 && ctx.combatState.hero.armor > 0) {
-          ctx.combatState.hero.armor = 0;
-          ctx.combatState.hero.equipped.armor = null;
+          const brokenItem = ctx.combatState.hero.equipped.armor;
+          ctx.combatState.hero.removeEquipment(brokenItem || "");
           ctx.roundState.messages.push({
             type: 'special',
             text: '⚡ Vindicator cleaves through your armor, completely destroying it (Armor = 0)!',
@@ -369,22 +369,34 @@ export const BESTIARY: MobConfig[] = [
     hearts: 15,
     damage: 4,
     defense: 4,
+    rules: 'Closing Distance: At the start of battle, you must close the distance. Your hits deal 0 DMG until you roll at least 1 hit.',
+    loot: 'Roll d6: On 5 or 6, gain 1 Fish.',
+    onLootRoll: (roll) =>
+      roll >= 5
+        ? { won: true, reward: '1 Fish', apply: (hero) => hero.adjustMaterial('Fish', 1) }
+        : { won: false, reward: 'No loot' },
     hooks: {
       onCombatStart: (ctx) => {
         ctx.combatState.mob.state.isClosingDistance = true;
-        ctx.combatState.mob.state.oxygen = 6;
+        ctx.combatState.mob.state.closingThisRound = true;
+        ctx.roundState.messages.push({
+          type: 'notice',
+          text: '  Guardian is far away! Roll at least 1 hit to close the distance!',
+        });
+      },
+      onRoundStart: (ctx) => {
+        ctx.combatState.mob.state.closingThisRound = !!ctx.combatState.mob.state.isClosingDistance;
       },
       onRollEvaluated: (ctx) => {
         if (ctx.roundState.hits > 0 && ctx.combatState.mob.state.isClosingDistance) {
           ctx.combatState.mob.state.isClosingDistance = false;
-          ctx.roundState.messages.push({ type: 'notice', text: '🎯 You swam close! Closing Distance overcome!' });
+          ctx.roundState.messages.push({ type: 'notice', text: '  You swam close! Distance overcome for next turn.' });
         }
       },
       onReceiveDamage: (ctx) => {
-        if (ctx.combatState.mob.state.isClosingDistance) {
-          // Nullify all incoming hero damage instances
+        if (ctx.combatState.mob.state.closingThisRound) {
           ctx.roundState.heroDamageInstances = [];
-          ctx.roundState.messages.push({ type: 'notice', text: '🌊 Closing Distance: Hero attacks deal 0 DMG!' });
+          ctx.roundState.messages.push({ type: 'notice', text: '  Closing Distance: Hero attacks deal 0 DMG this turn!' });
         }
       }
     }

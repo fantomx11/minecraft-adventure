@@ -12,6 +12,12 @@ export class OpenWorldModeController implements GameModeController {
     const views: ActiveView[] = ['world_map'];
     if (ctx.game.openWorld.currentPoiId) {
       views.push('poi_node');
+      const region = ctx.regions[ctx.game.openWorld.currentRegionId];
+      const poi = region?.pointsOfInterest.find((p) => p.id === ctx.game.openWorld.currentPoiId);
+      const node = poi?.nodes[ctx.game.openWorld.currentNodeId || poi.entryNodeId];
+      if (node?.accessibleViews) {
+        views.push(...node.accessibleViews);
+      }
     }
     return views;
   }
@@ -36,7 +42,7 @@ export class OpenWorldModeController implements GameModeController {
     };
   }
 
-  public initiateCombat(payload: CombatTriggerPayload, ctx: EngineContext): void {
+  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
     ctx.setActiveView('combat');
   }
 
@@ -45,6 +51,7 @@ export class OpenWorldModeController implements GameModeController {
       ctx.hero.respawn();
       ctx.game.openWorld.currentPoiId = null;
       ctx.game.openWorld.currentNodeId = null;
+      ctx.game.openWorld.counters.trekBonus = 0;
       ctx.setActiveView('world_map');
     } else {
       ctx.setActiveView(ctx.game.openWorld.currentPoiId ? 'poi_node' : 'world_map');
@@ -65,6 +72,7 @@ export class OpenWorldModeController implements GameModeController {
     ctx.hero.respawn();
     ctx.game.openWorld.currentPoiId = null;
     ctx.game.openWorld.currentNodeId = null;
+    ctx.game.openWorld.counters.trekBonus = 0;
     ctx.setActiveView('world_map');
     ctx.saveState();
   }
