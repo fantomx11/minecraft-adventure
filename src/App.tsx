@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'preact/hooks';
 import { Character } from './models/Character';
 import type { TrackedMaterial } from './types/inventory';
-import type { GameModeId, GameProgressionState, GameSaveData } from './types/game';
+import type { GameModeId, GameSaveData } from './types/game';
 import { CUSTOM_STORY_STORAGE_KEY, getInitialStoryPassages, STORY_PASSAGES, validateNarrative } from './data/storyPassages';
 import { getModeController } from './controllers';
 import { migrateSaveData } from './models/GameSave';
@@ -23,6 +23,7 @@ import type { Passage } from './types/narrative';
 import type { EngineContext } from './types/controller';
 import { CUSTOM_WORLD_STORAGE_KEY, getInitialWorldPackage, REGIONS, validateWorldPackage } from './data/regions';
 import type { Region } from './types/world';
+import { GameStore } from './models/GameStore';
 
 const STORAGE_KEY = 'minecraft_multimode_rpg_data';
 
@@ -37,7 +38,7 @@ export function App() {
   });
 
   const [hero, setHero] = useState<Character>(() => new Character(saveData.character));
-  const [game, setGame] = useState<GameProgressionState>(saveData.game);
+  const [game, setGame] = useState<GameStore>(() => new GameStore(saveData.game));
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -53,18 +54,24 @@ export function App() {
     return saveData.game.mode === 'open_world' ? getInitialWorldPackage().passages : getInitialStoryPassages();
   });
 
-  const saveState = useCallback(() => {
-    const updated = { version: 2, character: hero.toJSON(), game };
+const saveState = useCallback(() => {
+    const updated = {
+      version: 2,
+      character: hero.toJSON(),
+      game: game.toJSON(),
+    };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     setTick((t) => t + 1);
   }, [hero, game]);
 
   useEffect(() => {
-    const unsubscribe = hero.subscribe(() => {
-      saveState();
-    });
-    return unsubscribe;
-  }, [hero, saveState]);
+    const unsubHero = hero.subscribe(saveState);
+    const unsubGame = game.subscribe(saveState);
+    return () => {
+      unsubHero();
+      unsubGame();
+    };
+  }, [hero, game, saveState]);
 
   const controller = getModeController(game.mode);
 
@@ -238,24 +245,28 @@ export function App() {
         onClose={() => setOptionsOpen(false)}
         onUpdate={saveState}
         onReset={() => {
-          localStorage.removeItem(STORAGE_KEY);
-          const fresh = migrateSaveData(null);
-          setHero(new Character(fresh.character));
-          setGame(fresh.game);
-          setOptionsOpen(false);
-        }}
-        onLoad={(raw) => {
-          try {
-            const loaded = migrateSaveData(JSON.parse(raw));
-            const newHero = new Character(loaded.character);
-            setHero(newHero);
-            setGame(loaded.game);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, character: newHero.toJSON(), game: loaded.game }));
-            return true;
-          } catch {
-            return false;
-          }
-        }}
+            localStorage.removeItem(STORAGE_KEY);
+            const fresh = migrateSaveData(null);
+            setHero(new Character(fresh.character));
+            setGame(new GameStore(fresh.game));
+            setOptionsOpen(false);
+          }}
+          onLoad={(raw) => {
+            try {
+              const loaded = migrateSaveData(JSON.parse(raw));
+              const newHero = new Character(loaded.character);
+              const newGame = new GameStore(loaded.game);
+              setHero(newHero);
+              setGame(newGame);
+              localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify({ version: 2, character: newHero.toJSON(), game: newGame.toJSON() })
+              );
+              return true;
+            } catch {
+              return false;
+            }
+          }}
         onLoadStory={(json) => {
           const validated = validateNarrative(JSON.parse(json));
           if (!validated) return false;

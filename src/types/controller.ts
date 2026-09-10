@@ -1,8 +1,9 @@
 import type { Character } from '../models/Character';
-import type { GameProgressionState, ActiveView, GameModeId } from './game';
+import type { ActiveView, GameModeId } from './game';
 import type { Passage } from './narrative';
 import type { TrackedMaterial } from './inventory';
 import type { Region } from './world';
+import { GameStore } from '../models/GameStore';
 
 export interface ReturnBannerDescriptor {
   label: string;
@@ -17,7 +18,7 @@ export interface CombatTriggerPayload {
 
 export interface EngineContext {
   hero: Character;
-  game: GameProgressionState;
+  game: GameStore;
   passages: Record<string, Passage>;
   regions: Record<string, Region>;
   saveState: () => void;
