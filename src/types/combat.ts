@@ -53,13 +53,15 @@ export interface CombatContext {
   roundState: RoundState;
 }
 
+export type CombatHook = (ctx: CombatContext) => void;
+
 export interface CombatLifecycleHooks {
-  onCombatStart?(ctx: CombatContext): void;
-  onRoundStart?(ctx: CombatContext): void;
-  onRollEvaluated?(ctx: CombatContext): void;
-  onDealDamage?(ctx: CombatContext): void;
-  onReceiveDamage?(ctx: CombatContext): void;
-  onRoundEnd?(ctx: CombatContext): void;
-  onDeath?(ctx: CombatContext): void;
-  onCombatEnd?(ctx: CombatContext): void;
+  onCombatStart?: CombatHook;
+  onRoundStart?: CombatHook;
+  onRollEvaluated?: CombatHook;
+  onDealDamage?: CombatHook;
+  onReceiveDamage?: CombatHook;
+  onRoundEnd?: CombatHook;
+  onDeath?: CombatHook;
+  onCombatEnd?: CombatHook;
 }

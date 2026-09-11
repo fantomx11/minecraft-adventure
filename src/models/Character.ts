@@ -1,10 +1,10 @@
-import { Entity, EntityData } from './Entity';
+import { Entity, EntityConfig } from './Entity';
 import { getEquipmentItem } from '../data/recipes';
 import type { Item } from './Item';
 import type { TrackedMaterial, EquippedSlots, InventoryRule } from '../types/inventory';
 import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
 
-export interface SerializedCharacter extends EntityData {
+export interface SerializedCharacter extends EntityConfig {
   restarts: number;
   equipmentInventoryIds: string[];
   equipped: EquippedSlots;

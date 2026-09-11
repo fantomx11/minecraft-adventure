@@ -1,17 +1,16 @@
 import { Observable } from './Observable';
 import type { DamageInstance, DamageResult, CombatContext } from '../types/combat';
 
-export interface EntityData {
+export interface EntityConfig {
   name: string;
-  hearts: number;
   maxHearts: number;
-  health?: number;
+  hearts?: number;
 }
 
 export abstract class Entity extends Observable {
-  #data: EntityData;
+  #data: EntityConfig;
 
-  constructor(name: string, maxHearts: number, hearts?: number) {
+  constructor({ name, maxHearts, hearts }: EntityConfig) {
     super();
     this.#data = this.createReactiveStore({
       name,
@@ -23,58 +22,25 @@ export abstract class Entity extends Observable {
   abstract readonly armor: number;
 
   // --- Core Accessors ---
-  public get name(): string {
-    return this.#data.name;
-  }
-  public set name(val: string) {
-    this.#data.name = val;
-  }
+  public get name(): string { return this.#data.name; }
+  public set name(val: string) { this.#data.name = val; }
 
-  public get maxHearts(): number {
-    return this.#data.maxHearts;
-  }
-  public set maxHearts(val: number) {
-    this.#data.maxHearts = Math.max(1, val);
-  }
+  public get maxHearts(): number { return this.#data.maxHearts; }
+  public set maxHearts(val: number) { this.#data.maxHearts = Math.max(1, val); }
 
-  public get hearts(): number {
-    return this.#data.hearts;
-  }
-  public set hearts(val: number) {
-    this.#data.hearts = Math.max(0, Math.min(this.#data.maxHearts, val));
-  }
+  public get hearts(): number { return this.#data.hearts ?? this.maxHearts; }
+  public set hearts(val: number) { this.#data.hearts = Math.max(0, Math.min(this.#data.maxHearts, val)); }
 
-  public get health(): number {
-    return this.hearts;
-  }
-  public set health(val: number) {
-    this.hearts = val;
-  }
+  public get isDead(): boolean { return this.hearts <= 0; }
 
-  public setHealth(val: number): void {
-    this.hearts = val;
-  }
+  public get isAlive(): boolean { return !this.isDead; }
 
-  public get isDead(): boolean {
-    return this.hearts <= 0;
-  }
-
-  public get isAlive(): boolean {
-    return this.hearts > 0;
-  }
-
-  public isDefeated(): boolean {
-    return this.isDead;
-  }
+  public isDefeated(): boolean { return this.isDead; }
 
   // --- Domain Logic ---
-  public changeHealth(delta: number): void {
-    this.hearts += delta;
-  }
+  public changeHealth(delta: number): void { this.hearts += delta; }
 
-  public resetHealth(): void {
-    this.hearts = this.maxHearts;
-  }
+  public resetHealth(): void { this.hearts = this.maxHearts; }
 
   public takeDamage(instances: DamageInstance[], ctx?: CombatContext): DamageResult {
     let appliedTotal = 0;
@@ -93,12 +59,11 @@ export abstract class Entity extends Observable {
     return { appliedTotal, details };
   }
 
-  public toJSON(): EntityData {
+  public toJSON(): EntityConfig {
     return {
       name: this.name,
       hearts: this.hearts,
       maxHearts: this.maxHearts,
-      health: this.hearts,
     };
   }
 }

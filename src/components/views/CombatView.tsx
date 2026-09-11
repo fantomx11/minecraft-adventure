@@ -419,9 +419,9 @@ export function CombatView({
         <PixelFrame title="MOB RULES" icon="spark">
           <div id="mob-rules-stream">
             <span class="rules-header-tag">SPECIAL ABILITY</span>
-            <span class="rules-body-text">{activeMob.rules}</span>
+            <span class="rules-body-text">{activeMob.rulesText}</span>
             <span class="rules-header-tag">LOOT DROP</span>
-            <span class="rules-body-text">{activeMob.loot}</span>
+            <span class="rules-body-text">{activeMob.lootText}</span>
           </div>
         </PixelFrame>
       </div>
