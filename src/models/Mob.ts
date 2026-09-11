@@ -2,6 +2,7 @@ import { Entity, EntityConfig } from './Entity';
 import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
 import { Action, CombatBehaviorAst } from '../types/ast';
 import { AstInterpreter } from '../engine/astInterpreter';
+import { Character } from './Character';
 
 interface MobData {
   id: string;
@@ -86,13 +87,16 @@ export class Mob extends Entity implements Required<CombatLifecycleHooks> {
   public get state(): Record<string, any> { return this.#data.state || {}; }
 
   // --- Loot Handler ---
-  public onLootRoll(roll: number): string {
-    if (this.#data.loot) {
-      const {reward} = AstInterpreter.execute(this.#data.loot, { roll });
-
-      if(reward) {
-        return reward
-      }
+  public onLootRoll(roll: number, hero?: any): string {
+    if (this.#data.loot && this.#data.loot.length > 0) {
+      const scope = {
+        roll,
+        hero,
+        mob: this,
+        self: this,
+      };
+      const returns = AstInterpreter.execute(this.#data.loot, scope);
+      if (returns.reward) return returns.reward;
     }
     return 'No loot';
   }

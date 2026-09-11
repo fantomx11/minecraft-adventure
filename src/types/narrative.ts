@@ -1,4 +1,4 @@
-import type { Condition, Mutation } from './world';
+import { Expr, Action } from './ast';
 
 export type ChoiceType = 'passage' | 'combat' | 'view' | 'dice_check';
 
@@ -22,8 +22,8 @@ export interface PassageChoice {
   targetPassageId?: string;
   targetView?: 'forest' | 'mining' | 'crafting';
 
-  condition?: Condition;
-  mutations?: Mutation[];
+  condition?: Expr;
+  mutations?: Action[];
   lockedReason?: string;
   behavior?: 'hide' | 'disable';
 
@@ -49,7 +49,7 @@ export interface Passage {
   text: string;
   icon?: string;
 
-  onEnterMutations?: Mutation[];
+  onEnterMutations?: Action[];
   triggerCombat?: PassageCombatTrigger;
   accessibleViews?: ('forest' | 'mining' | 'crafting')[];
   choices: PassageChoice[];

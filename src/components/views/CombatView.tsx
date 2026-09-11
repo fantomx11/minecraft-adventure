@@ -11,6 +11,7 @@ import { Character } from '../../models/Character';
 import { DiceRoller } from '../ui/DiceRoller';
 import { DieItem } from '../../types/dice';
 import { useObservable } from '../../hooks/useObservable';
+import { MobRegistry } from '../../engine/mobRegistry';
 
 interface CombatViewProps {
   hero: Character;
@@ -61,9 +62,11 @@ export function CombatView({
 
   const initMobEncounter = (mobName: string) => {
     setSelectedMobName(mobName);
-    const config = BESTIARY.find((m) => m.name === mobName) || BESTIARY[0];
-    const createdMob = new Mob(config);
-    const eng = new CombatEngine(hero, createdMob);
+    const customMobs = activePackage.mobs || {};
+    const targetMob = MobRegistry.createMob(mobName, customMobs);
+
+    const eng = new CombatEngine(hero, targetMob);
+    eng.initCombat();
     eng.initCombat();
     setEngine(eng);
     setLootClaimed(false);
@@ -281,10 +284,10 @@ export function CombatView({
           {engine.ctx.combatState.effects.length > 0
             ? `[ ${engine.ctx.combatState.effects.map((e) => (e as any).name || 'Effect').join(' | ')} ]`
             : isVictorious
-            ? 'Encounter Won'
-            : isDefeated
-            ? 'Encounter Lost'
-            : 'Active Combat'}
+              ? 'Encounter Won'
+              : isDefeated
+                ? 'Encounter Lost'
+                : 'Active Combat'}
         </StatusBar>
       </PixelFrame>
 
@@ -295,10 +298,10 @@ export function CombatView({
             isDefeated
               ? 'DEFEAT'
               : isPendingCritPick
-              ? 'CRITICAL HIT'
-              : isVictorious
-              ? 'LOOT DROP'
-              : 'ACTION ROLLER'
+                ? 'CRITICAL HIT'
+                : isVictorious
+                  ? 'LOOT DROP'
+                  : 'ACTION ROLLER'
           }
           icon={isDefeated ? 'tnt' : isPendingCritPick || isVictorious ? 'spark' : 'target'}
         >

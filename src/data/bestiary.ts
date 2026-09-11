@@ -1,493 +1,1136 @@
 import type { MobConfig } from '../models/Mob';
-import type { CombatContext } from '../types/combat';
-import { PoisonEffect, VexEffect } from '../models/Effects';
 
 export const BESTIARY: MobConfig[] = [
   {
+    id: 'zombie',
     name: 'Zombie',
-    hearts: 10,
+    maxHearts: 10,
     damage: 3,
     defense: 4,
-    rules: 'Bite: Rolling 2+ misses causes the zombie to bite you, dealing a 2nd hit (+1 Mob Hit).',
-    loot: 'Roll d6: On a 6, gain 1 Iron.',
-    onLootRoll: (roll) =>
-      roll === 6
-        ? { won: true, reward: '1 Iron', apply: (hero) => hero.adjustMaterial('Iron', 1) }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2) {
-          ctx.roundState.mobDamageInstances.push({
-            amount: ctx.combatState.mob.damage,
-            source: 'Zombie Bite (Extra Hit)',
-            appliesArmor: true,
-          });
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: '⚡ Zombie bite lands an extra attack!',
-          });
-        }
+    rulesText: 'Bite: Rolling 2+ misses causes the zombie to bite you, dealing a 2nd hit (+1 Mob Hit).',
+    lootText: 'Roll d6: On a 6, gain 1 Iron.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Iron', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 Iron' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            {
+              type: 'deal_damage',
+              target: 'hero',
+              amount: { type: 'get', path: 'mob.damage' },
+              source: 'Zombie Bite (Extra Hit)',
+              appliesArmor: true,
+            },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Zombie bite lands an extra attack!' },
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'zombie_villager',
     name: 'Zombie Villager',
-    hearts: 10,
+    maxHearts: 10,
     damage: 3,
     defense: 5,
-    hooks: {
-      onRollEvaluated: (ctx) => {
-        if (ctx.roundState.matchingMisses >= 2 && !ctx.combatState.mob.state.villagerArmor) {
-          ctx.combatState.mob.state.villagerArmor = true;
-          ctx.roundState.messages.push({ type: 'special', text: '⚡ Zombie Villager equips armor!' });
-        }
-      },
-      onReceiveDamage: (ctx) => {
-        if (ctx.combatState.mob.state.villagerArmor) {
-          ctx.roundState.heroDamageInstances.forEach(inst => {
-            inst.amount = Math.max(0, inst.amount - 1);
-          });
-        }
-      }
-    }
+    rulesText: 'Armored: Rolling 2+ misses causes the Zombie Villager to equip armor, reducing incoming damage by 1.',
+    lootText: 'None.',
+    loot: [
+      { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'unary',
+              op: 'not',
+              operand: { type: 'get', path: 'mob.state.villagerArmor' },
+            },
+          },
+          then: [
+            { type: 'set', target: 'mob.state.villagerArmor', value: { type: 'literal', value: true } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Zombie Villager equips armor!' },
+            },
+          ],
+        },
+      ],
+      onReceiveDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.villagerArmor' },
+          then: [
+            {
+              type: 'modify_damage_instances',
+              target: 'hero_damage',
+              delta: { type: 'literal', value: -1 },
+              min: 0,
+            },
+          ],
+        },
+      ],
+    },
   },
   {
+    id: 'skeleton',
     name: 'Skeleton',
-    hearts: 8,
+    maxHearts: 8,
     damage: 2,
     defense: 4,
-    rules: 'Retreat: Rolling 2+ misses causes the skeleton to reposition, permanently raising its Defense to 5.',
-    loot: 'Roll d6: On a 6, gain a Bow (2 Attack, 1 Damage; 3 Damage on 1st attack).',
-    onLootRoll: (roll) =>
-      roll === 6
-        ? { won: true, reward: 'Bow', apply: (hero) => hero.addEquipment('Bow') }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2 && ctx.combatState.mob.defense < 5) {
-          ctx.combatState.mob.defense = 5;
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: '⚡ Skeleton retreats! Defense is permanently raised to 5!',
-          });
-        }
+    rulesText: 'Retreat: Rolling 2+ misses causes the skeleton to reposition, permanently raising its Defense to 5.',
+    lootText: 'Roll d6: On a 6, gain a Bow (2 Attack, 1 Damage; 3 Damage on 1st attack).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Bow' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Bow' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'binary',
+              op: '<',
+              left: { type: 'get', path: 'mob.defense' },
+              right: { type: 'literal', value: 5 },
+            },
+          },
+          then: [
+            { type: 'set', target: 'mob.defense', value: { type: 'literal', value: 5 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Skeleton retreats! Defense is permanently raised to 5!' },
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'spider',
     name: 'Spider',
-    hearts: 8,
+    maxHearts: 8,
     damage: 2,
     defense: 4,
-    rules: 'Webs: Rolling 2+ misses traps you in webs, causing spider attacks to completely ignore your Armor.',
-    loot: 'Roll d6: On a 5 or 6, gain 1 String.',
-    onLootRoll: (roll) =>
-      roll >= 5
-        ? { won: true, reward: '1 String', apply: (hero) => hero.adjustMaterial('String', 1) }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2 && !ctx.combatState.ignoreArmor) {
-          ctx.combatState.ignoreArmor = true;
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: '⚡ Caught in webs! Attacks ignore Armor for the rest of battle!',
-          });
-        }
+    rulesText: 'Webs: Rolling 2+ misses traps you in webs, causing spider attacks to completely ignore your Armor.',
+    lootText: 'Roll d6: On a 5 or 6, gain 1 String.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'String', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 String' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'unary',
+              op: 'not',
+              operand: { type: 'get', path: 'combat.ignoreArmor' },
+            },
+          },
+          then: [
+            { type: 'set', target: 'combat.ignoreArmor', value: { type: 'literal', value: true } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Caught in webs! Attacks ignore Armor for the rest of battle!' },
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'cave_spider',
     name: 'Cave Spider',
-    hearts: 8,
+    maxHearts: 8,
     damage: 2,
     defense: 4,
-    rules: 'Poison Bite: Rolling 2+ misses poisons you, dealing 1 unblockable damage every turn until battle ends.',
-    loot: 'Roll d6: On a 5 or 6, gain 1 String.',
-    onLootRoll: (roll) =>
-      roll >= 5
-        ? { won: true, reward: '1 String', apply: (hero) => hero.adjustMaterial('String', 1) }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2 && !ctx.combatState.hero.hasItem('PoisonImmune')) {
-          ctx.combatState.effects.push(new PoisonEffect(1));
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: '⚡ Poison bite! You are poisoned for 1 damage every turn!',
-          });
-        }
+    rulesText: 'Poison Bite: Rolling 2+ misses poisons you, dealing 1 unblockable damage every turn until battle ends.',
+    lootText: 'Roll d6: On a 5 or 6, gain 1 String.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'String', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 String' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'unary',
+              op: 'not',
+              operand: { type: 'has_item', itemId: 'PoisonImmune' },
+            },
+          },
+          then: [
+            { type: 'add_effect', effect: 'poison', amount: { type: 'literal', value: 1 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Poison bite! You are poisoned for 1 damage every turn!' },
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'slime',
     name: 'Slime',
-    hearts: 16,
+    maxHearts: 16,
     damage: 2,
     defense: 4,
-    rules: 'Divide: Rolling 2+ misses causes the slime to split, doubling its current damage value.',
-    loot: 'Roll d6: On 3 or higher, gain 1 Slimeball.',
-    onLootRoll: (roll) =>
-      roll >= 3
-        ? { won: true, reward: '1 Slimeball', apply: (hero) => hero.adjustMaterial('Slimeball', 1) }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2) {
-          ctx.combatState.mob.damage *= 2;
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: `⚡ The slime splits! Damage doubled to ${ctx.combatState.mob.damage}!`,
-          });
-        }
+    rulesText: 'Divide: Rolling 2+ misses causes the slime to split, doubling its current damage value.',
+    lootText: 'Roll d6: On 3 or higher, gain 1 Slimeball.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 3 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Slimeball', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 Slimeball' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'modify', target: 'mob.damage', op: 'multiply', value: { type: 'literal', value: 2 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: {
+                type: 'template',
+                template: '⚡ The slime splits! Damage doubled to ${mob.damage}!',
+              },
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'creeper',
     name: 'Creeper',
-    hearts: 10,
+    maxHearts: 10,
     damage: 0,
     defense: 3,
-    rules: 'Fuse: Explodes for 20 DMG on Turn 8.\nHiss: Rolling 2+ misses hisses. Triggering a 2nd hiss causes an instant 20-damage explosion!',
-    loot: 'If defeated without exploding, roll d6: On 6, gain 2 Gunpowder.',
-    onLootRoll: (roll) =>
-      roll === 6
-        ? { won: true, reward: '2 Gunpowder', apply: (hero) => hero.adjustMaterial('Gunpowder', 2) }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onCombatStart: (ctx: CombatContext) => {
-        ctx.combatState.mob.state.fuse = 0;
-        ctx.combatState.mob.state.hissCount = 0;
+    rulesText: 'Fuse: Explodes for 20 DMG on Turn 8.\nHiss: Rolling 2+ misses hisses. Triggering a 2nd hiss causes an instant 20-damage explosion!',
+    lootText: 'If defeated without exploding, roll d6: On 6, gain 2 Gunpowder.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Gunpowder', count: { type: 'literal', value: 2 }, isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '2 Gunpowder' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
-      onRoundStart: (ctx: CombatContext) => {
-        ctx.combatState.mob.state.fuse++;
-        if (ctx.combatState.mob.state.fuse >= 8) {
-          ctx.combatState.hero.changeHealth(-20);
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: '💥 KABOOM! Fuse reached 8! Creeper detonated for 20 Damage!',
-          });
-        }
-      },
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2) {
-          ctx.combatState.mob.state.hissCount = (ctx.combatState.mob.state.hissCount || 0) + 1;
-          if (ctx.combatState.mob.state.hissCount >= 2) {
-            ctx.combatState.hero.changeHealth(-20);
-            ctx.roundState.messages.push({
-              type: 'special',
-              text: '💥 KABOOM! Creeper hissed twice and detonated instantly for 20 Damage!',
-            });
-          } else {
-            ctx.roundState.messages.push({
-              type: 'special',
-              text: '⚡ Creeper hisses loudly! A 2nd hiss causes an instant explosion!',
-            });
-          }
-        }
-      },
+    ],
+    behavior: {
+      onCombatStart: [
+        { type: 'set', target: 'mob.state.fuse', value: { type: 'literal', value: 0 } },
+        { type: 'set', target: 'mob.state.hissCount', value: { type: 'literal', value: 0 } },
+      ],
+      onRoundStart: [
+        { type: 'modify', target: 'mob.state.fuse', op: 'add', value: { type: 'literal', value: 1 } },
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'mob.state.fuse' },
+            right: { type: 'literal', value: 8 },
+          },
+          then: [
+            { type: 'change_health', target: 'hero', amount: { type: 'literal', value: -20 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '💥 KABOOM! Fuse reached 8! Creeper detonated for 20 Damage!' },
+            },
+          ],
+        },
+      ],
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'modify', target: 'mob.state.hissCount', op: 'add', value: { type: 'literal', value: 1 } },
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '>=',
+                left: { type: 'get', path: 'mob.state.hissCount' },
+                right: { type: 'literal', value: 2 },
+              },
+              then: [
+                { type: 'change_health', target: 'hero', amount: { type: 'literal', value: -20 } },
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '💥 KABOOM! Creeper hissed twice and detonated instantly for 20 Damage!' },
+                },
+              ],
+              else: [
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '⚡ Creeper hisses loudly! A 2nd hiss causes an instant explosion!' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'pillager',
     name: 'Pillager',
-    hearts: 6,
+    maxHearts: 6,
     damage: 2,
     defense: 3,
-    rules: 'Zero In: Rolling 2+ misses causes the pillager to dial in its crossbow, dealing 4 damage next turn.',
-    loot: 'Roll d6: On a 6, gain a Crossbow (2 Attack, 2 Damage).',
-    onLootRoll: (roll) =>
-      roll === 6
-        ? { won: true, reward: 'Crossbow', apply: (hero) => hero.addEquipment('Crossbow') }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2) {
-          ctx.combatState.mob.state.nextTurnDmg = 4;
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: "⚡ Pillager zeroes in! Next turn's damage will be 4!",
-          });
-        }
+    rulesText: 'Zero In: Rolling 2+ misses causes the pillager to dial in its crossbow, dealing 4 damage next turn.',
+    lootText: 'Roll d6: On a 6, gain a Crossbow (2 Attack, 2 Damage).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Crossbow' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Crossbow' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
-      onDealDamage: (ctx) => {
-        if (ctx.combatState.mob.state.nextTurnDmg) {
-          for (const inst of ctx.roundState.mobDamageInstances) {
-            inst.amount = ctx.combatState.mob.state.nextTurnDmg;
-            inst.source = 'Pillager Zeroed-In Crossbow';
-          }
-        }
-      },
-      onRoundEnd: (ctx: CombatContext) => {
-        if (ctx.combatState.mob.state.nextTurnDmg) {
-          delete ctx.combatState.mob.state.nextTurnDmg;
-        }
-      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'set', target: 'mob.state.nextTurnDmg', value: { type: 'literal', value: 4 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: "⚡ Pillager zeroes in! Next turn's damage will be 4!" },
+            },
+          ],
+        },
+      ],
+      onDealDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.nextTurnDmg' },
+          then: [
+            {
+              type: 'modify_damage_instances',
+              target: 'mob_damage',
+              amount: { type: 'get', path: 'mob.state.nextTurnDmg' },
+              source: 'Pillager Zeroed-In Crossbow',
+            },
+          ],
+        },
+      ],
+      onRoundEnd: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.nextTurnDmg' },
+          then: [
+            { type: 'set', target: 'mob.state.nextTurnDmg', value: { type: 'literal', value: 0 } },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'vindicator',
     name: 'Vindicator',
-    hearts: 14,
+    maxHearts: 14,
     damage: 6,
     defense: 4,
-    rules: 'Cleave: Rolling 2+ misses shatters your armor, completely destroying it (Armor set to 0).',
-    loot: 'Roll d6: On 5 or 6, gain an Enchanted Iron Axe (4 Attack, 6 Damage).',
-    onLootRoll: (roll) =>
-      roll >= 5
-        ? { won: true, reward: 'Enchanted Iron Axe', apply: (hero) => hero.addEquipment('Enchanted Iron Axe') }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2 && ctx.combatState.hero.armor > 0) {
-          const brokenItem = ctx.combatState.hero.equipped.armor;
-          ctx.combatState.hero.removeEquipment(brokenItem || "");
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: '⚡ Vindicator cleaves through your armor, completely destroying it (Armor = 0)!',
-          });
-        }
+    rulesText: 'Cleave: Rolling 2+ misses shatters your armor, completely destroying it (Armor set to 0).',
+    lootText: 'Roll d6: On 5 or 6, gain an Enchanted Iron Axe (4 Attack, 6 Damage).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Enchanted Iron Axe' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Enchanted Iron Axe' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'binary',
+              op: '>',
+              left: { type: 'get', path: 'hero.armor' },
+              right: { type: 'literal', value: 0 },
+            },
+          },
+          then: [
+            { type: 'inventory', action: 'remove', slot: 'armor' },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: {
+                type: 'literal',
+                value: '⚡ Vindicator cleaves through your armor, completely destroying it (Armor = 0)!',
+              },
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'drowned',
     name: 'Drowned',
-    hearts: 30,
+    maxHearts: 30,
     damage: 6,
     defense: 4,
-    rules: 'Underwater Drag: Rolling 2+ misses slows your swings, subtracting 1 from your attack Damage for this fight.',
-    loot: 'Roll d6: On a 6, gain a Trident (2 Attack, 3 Damage; 4 Damage on 1 die).',
-    onLootRoll: (roll) =>
-      roll === 6
-        ? { won: true, reward: 'Trident', apply: (hero) => hero.addEquipment('Trident') }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2) {
-          ctx.combatState.heroDmgPenalty = (ctx.combatState.heroDmgPenalty || 0) + 1;
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: `⚡ Underwater drag slows your blows (-1 Damage, Total penalty: -${ctx.combatState.heroDmgPenalty})!`,
-          });
-        }
+    rulesText: 'Underwater Drag: Rolling 2+ misses slows your swings, subtracting 1 from your attack Damage for this fight.',
+    lootText: 'Roll d6: On a 6, gain a Trident (2 Attack, 3 Damage; 4 Damage on 1 die).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Trident' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Trident' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'modify', target: 'combat.heroDmgPenalty', op: 'add', value: { type: 'literal', value: 1 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: {
+                type: 'template',
+                template: '⚡ Underwater drag slows your blows (-1 Damage, Total penalty: -${combat.heroDmgPenalty})!',
+              },
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'witch',
     name: 'Witch',
-    hearts: 13,
+    maxHearts: 13,
     damage: 3,
     defense: 5,
-    rules: 'Splash Potions: Rolling 2+ misses rolls on Witch Potion Table (1=Fumble, 2-3=6 DMG, 4=-1 Hero DMG, 5=Poison 1/turn, 6=Heals 4 HP).',
-    loot: 'Roll d6: On 5 or 6, gain 1 Healing Potion.',
-    onLootRoll: (roll) =>
-      roll >= 5
-        ? { won: true, reward: 'Healing Potion (+4 HP)', apply: (hero) => hero.changeHealth(4) }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx: CombatContext) => {
-        if (ctx.roundState.matchingMisses >= 2) {
-          const roll = Math.floor(Math.random() * 6) + 1;
-          let msg = `⚡ Witch throws a splash potion (d6 = ${roll}): `;
-          if (roll === 1) {
-            msg += 'Fumble! No effect.';
-          } else if (roll <= 3) {
-            ctx.combatState.hero.changeHealth(-6);
-            msg += 'Potion of Harming deals 6 Damage!';
-          } else if (roll === 4) {
-            ctx.combatState.heroDmgPenalty = (ctx.combatState.heroDmgPenalty || 0) + 1;
-            msg += 'Potion of Weakness reduces hero damage by 1!';
-          } else if (roll === 5) {
-            ctx.combatState.effects.push(new PoisonEffect(1));
-            msg += 'Potion of Poison! 1 damage every turn!';
-          } else {
-            ctx.combatState.mob.hearts = Math.min(ctx.combatState.mob.maxHearts, ctx.combatState.mob.hearts + 4);
-            msg += 'Potion of Healing! Witch regains 4 Hearts!';
-          }
-          ctx.roundState.messages.push({ type: 'special', text: msg });
-        }
+    rulesText: 'Splash Potions: Rolling 2+ misses rolls on Witch Potion Table (1=Fumble, 2-3=6 DMG, 4=-1 Hero DMG, 5=Poison 1/turn, 6=Heals 4 HP).',
+    lootText: 'Roll d6: On 5 or 6, gain 1 Healing Potion.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'change_health', target: 'hero', amount: { type: 'literal', value: 4 } },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Healing Potion (+4 HP)' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            {
+              type: 'set',
+              target: 'mob.state.potionRoll',
+              value: { type: 'dice', count: 1, sides: 6 },
+            },
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '==',
+                left: { type: 'get', path: 'mob.state.potionRoll' },
+                right: { type: 'literal', value: 1 },
+              },
+              then: [
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '⚡ Witch throws a splash potion (d6 = 1): Fumble! No effect.' },
+                },
+              ],
+              else: [
+                {
+                  type: 'if',
+                  condition: {
+                    type: 'binary',
+                    op: '<=',
+                    left: { type: 'get', path: 'mob.state.potionRoll' },
+                    right: { type: 'literal', value: 3 },
+                  },
+                  then: [
+                    { type: 'change_health', target: 'hero', amount: { type: 'literal', value: -6 } },
+                    {
+                      type: 'message',
+                      messageType: 'special',
+                      text: {
+                        type: 'template',
+                        template: '⚡ Witch throws a splash potion (d6 = ${mob.state.potionRoll}): Potion of Harming deals 6 Damage!',
+                      },
+                    },
+                  ],
+                  else: [
+                    {
+                      type: 'if',
+                      condition: {
+                        type: 'binary',
+                        op: '==',
+                        left: { type: 'get', path: 'mob.state.potionRoll' },
+                        right: { type: 'literal', value: 4 },
+                      },
+                      then: [
+                        { type: 'modify', target: 'combat.heroDmgPenalty', op: 'add', value: { type: 'literal', value: 1 } },
+                        {
+                          type: 'message',
+                          messageType: 'special',
+                          text: {
+                            type: 'literal',
+                            value: '⚡ Witch throws a splash potion (d6 = 4): Potion of Weakness reduces hero damage by 1!',
+                          },
+                        },
+                      ],
+                      else: [
+                        {
+                          type: 'if',
+                          condition: {
+                            type: 'binary',
+                            op: '==',
+                            left: { type: 'get', path: 'mob.state.potionRoll' },
+                            right: { type: 'literal', value: 5 },
+                          },
+                          then: [
+                            { type: 'add_effect', effect: 'poison', amount: { type: 'literal', value: 1 } },
+                            {
+                              type: 'message',
+                              messageType: 'special',
+                              text: {
+                                type: 'literal',
+                                value: '⚡ Witch throws a splash potion (d6 = 5): Potion of Poison! 1 damage every turn!',
+                              },
+                            },
+                          ],
+                          else: [
+                            { type: 'change_health', target: 'mob', amount: { type: 'literal', value: 4 } },
+                            {
+                              type: 'message',
+                              messageType: 'special',
+                              text: {
+                                type: 'literal',
+                                value: '⚡ Witch throws a splash potion (d6 = 6): Potion of Healing! Witch regains 4 Hearts!',
+                              },
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'evoker',
     name: 'Evoker',
-    hearts: 24,
+    maxHearts: 24,
     damage: 0,
     defense: 4,
-    rules: 'Spellcasting: Hits taken depend on miss dice:\n• Odd Miss Die: Evoker Fang (1d6 DMG).\n• Even Miss Die: Vex (1d6 DMG + adds +1 DMG to all future hits).\n• Doubles on Hits banishes 1 Vex.\n• Miss Doubles: Lightning helmet strike deals 1d6 bonus DMG!',
-    loot: 'Roll d6: On 5 or 6, gain an Undamaged Totem of Undying (prevents fatal defeat and fully heals 20 HP).',
-    onLootRoll: (roll) =>
-      roll >= 5
-        ? { won: true, reward: 'Totem of Undying', apply: (hero) => hero.addEquipment('Totem of Undying') }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onRollEvaluated: (ctx) => {
-        if (ctx.roundState.matchingMisses >= 2) {
-          const lightningDmg = Math.floor(Math.random() * 6) + 1;
-          ctx.combatState.hero.changeHealth(-lightningDmg);
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: `⚡ Lightning helmet strike! Took ${lightningDmg} unblockable lightning damage!`,
-          });
-        }
+    rulesText: 'Spellcasting: Hits taken depend on miss dice:\n• Odd Miss Die: Evoker Fang (1d6 DMG).\n• Even Miss Die: Vex (1d6 DMG + adds +1 DMG to all future hits).\n• Doubles on Hits banishes 1 Vex.\n• Miss Doubles: Lightning helmet strike deals 1d6 bonus DMG!',
+    lootText: 'Roll d6: On 5 or 6, gain an Undamaged Totem of Undying (prevents fatal defeat and fully heals 20 HP).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Totem of Undying' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Totem of Undying' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
-      onDealDamage: (ctx) => {
-        // Clear the default 0-damage attack instances
-        ctx.roundState.mobDamageInstances = [];
-
-        const misses = ctx.roundState.missRolls;
-        const bonusMisses = ctx.roundState.matchingMisses >= 2 ? 1 : 0;
-        const totalSpells = misses.length + bonusMisses;
-
-        for (let i = 0; i < totalSpells; i++) {
-          const val = i < misses.length ? misses[i] : Math.floor(Math.random() * 6) + 1;
-          const isOdd = val % 2 !== 0;
-          const spellDmg = Math.floor(Math.random() * 6) + 1;
-
-          if (isOdd) {
-            ctx.roundState.mobDamageInstances.push({
-              amount: spellDmg,
-              source: `Evoker Fang [Die ${val}]`,
-              appliesArmor: true,
-            });
-          } else {
-            ctx.combatState.effects.push(new VexEffect());
-            ctx.roundState.mobDamageInstances.push({
-              amount: spellDmg,
-              source: `Summoned Vex Strike [Die ${val}]`,
-              appliesArmor: true,
-            });
-            ctx.roundState.messages.push({
-              type: 'special',
-              text: `👻 Evoker summoned a Vex! (+1 ongoing DMG to all future hits)`,
-            });
-          }
-        }
-      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            {
+              type: 'set',
+              target: 'mob.state.lightningDmg',
+              value: { type: 'dice', count: 1, sides: 6 },
+            },
+            {
+              type: 'change_health',
+              target: 'hero',
+              amount: {
+                type: 'unary',
+                op: '-',
+                operand: { type: 'get', path: 'mob.state.lightningDmg' },
+              },
+            },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: {
+                type: 'template',
+                template: '⚡ Lightning helmet strike! Took ${mob.state.lightningDmg} unblockable lightning damage!',
+              },
+            },
+          ],
+        },
+      ],
+      onDealDamage: [
+        { type: 'clear_mob_damage' },
+        {
+          type: 'for_each',
+          list: { type: 'get', path: 'round.missRolls' },
+          as: 'die',
+          actions: [
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '==',
+                left: {
+                  type: 'binary',
+                  op: '%',
+                  left: { type: 'get', path: 'die' },
+                  right: { type: 'literal', value: 2 },
+                },
+                right: { type: 'literal', value: 1 },
+              },
+              then: [
+                {
+                  type: 'deal_damage',
+                  target: 'hero',
+                  amount: { type: 'dice', count: 1, sides: 6 },
+                  source: 'Evoker Fang',
+                  appliesArmor: true,
+                },
+              ],
+              else: [
+                { type: 'add_effect', effect: 'vex' },
+                {
+                  type: 'deal_damage',
+                  target: 'hero',
+                  amount: { type: 'dice', count: 1, sides: 6 },
+                  source: 'Summoned Vex Strike',
+                  appliesArmor: true,
+                },
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '👻 Evoker summoned a Vex! (+1 ongoing DMG to all future hits)' },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            {
+              type: 'set',
+              target: 'mob.state.bonusSpellDie',
+              value: { type: 'dice', count: 1, sides: 6 },
+            },
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '==',
+                left: {
+                  type: 'binary',
+                  op: '%',
+                  left: { type: 'get', path: 'mob.state.bonusSpellDie' },
+                  right: { type: 'literal', value: 2 },
+                },
+                right: { type: 'literal', value: 1 },
+              },
+              then: [
+                {
+                  type: 'deal_damage',
+                  target: 'hero',
+                  amount: { type: 'dice', count: 1, sides: 6 },
+                  source: 'Evoker Fang (Bonus Miss Strike)',
+                  appliesArmor: true,
+                },
+              ],
+              else: [
+                { type: 'add_effect', effect: 'vex' },
+                {
+                  type: 'deal_damage',
+                  target: 'hero',
+                  amount: { type: 'dice', count: 1, sides: 6 },
+                  source: 'Summoned Vex Strike (Bonus Miss Strike)',
+                  appliesArmor: true,
+                },
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '👻 Evoker summoned a Vex! (+1 ongoing DMG to all future hits)' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
     },
   },
   {
+    id: 'guardian',
     name: 'Guardian',
-    hearts: 15,
+    maxHearts: 15,
     damage: 4,
     defense: 4,
-    rules: 'Closing Distance: At the start of battle, you must close the distance. Your hits deal 0 DMG until you roll at least 1 hit.',
-    loot: 'Roll d6: On 5 or 6, gain 1 Fish.',
-    onLootRoll: (roll) =>
-      roll >= 5
-        ? { won: true, reward: '1 Fish', apply: (hero) => hero.adjustMaterial('Fish', 1) }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onCombatStart: (ctx) => {
-        ctx.combatState.mob.state.isClosingDistance = true;
-        ctx.combatState.mob.state.closingThisRound = true;
-        ctx.roundState.messages.push({
-          type: 'notice',
-          text: '  Guardian is far away! Roll at least 1 hit to close the distance!',
-        });
+    rulesText: 'Closing Distance: At the start of battle, you must close the distance. Your hits deal 0 DMG until you roll at least 1 hit.',
+    lootText: 'Roll d6: On 5 or 6, gain 1 Fish.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Fish', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 Fish' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
-      onRoundStart: (ctx) => {
-        ctx.combatState.mob.state.closingThisRound = !!ctx.combatState.mob.state.isClosingDistance;
-      },
-      onRollEvaluated: (ctx) => {
-        if (ctx.roundState.hits > 0 && ctx.combatState.mob.state.isClosingDistance) {
-          ctx.combatState.mob.state.isClosingDistance = false;
-          ctx.roundState.messages.push({ type: 'notice', text: '  You swam close! Distance overcome for next turn.' });
-        }
-      },
-      onReceiveDamage: (ctx) => {
-        if (ctx.combatState.mob.state.closingThisRound) {
-          ctx.roundState.heroDamageInstances = [];
-          ctx.roundState.messages.push({ type: 'notice', text: '  Closing Distance: Hero attacks deal 0 DMG this turn!' });
-        }
-      }
-    }
+    ],
+    behavior: {
+      onCombatStart: [
+        { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: true } },
+        { type: 'set', target: 'mob.state.closingThisRound', value: { type: 'literal', value: true } },
+        {
+          type: 'message',
+          messageType: 'notice',
+          text: { type: 'literal', value: '  Guardian is far away! Roll at least 1 hit to close the distance!' },
+        },
+      ],
+      onRoundStart: [
+        {
+          type: 'set',
+          target: 'mob.state.closingThisRound',
+          value: { type: 'get', path: 'mob.state.isClosingDistance' },
+        },
+      ],
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>',
+              left: { type: 'get', path: 'round.hits' },
+              right: { type: 'literal', value: 0 },
+            },
+            right: { type: 'get', path: 'mob.state.isClosingDistance' },
+          },
+          then: [
+            { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: false } },
+            {
+              type: 'message',
+              messageType: 'notice',
+              text: { type: 'literal', value: '  You swam close! Distance overcome for next turn.' },
+            },
+          ],
+        },
+      ],
+      onReceiveDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.closingThisRound' },
+          then: [
+            { type: 'clear_damage', target: 'hero' },
+            {
+              type: 'message',
+              messageType: 'notice',
+              text: { type: 'literal', value: '  Closing Distance: Hero attacks deal 0 DMG this turn!' },
+            },
+          ],
+        },
+      ],
+    },
   },
   {
+    id: 'elder_guardian',
     name: 'Elder Guardian',
-    hearts: 30,
+    maxHearts: 30,
     damage: 6,
     defense: 3,
-    rules: 'Closing Distance: At the start of battle (and when it swims away), you must close the distance. Your hits deal 0 DMG and Elder Guardian attacks ignore Armor until you roll at least 1 hit.\nSwim Away: Rolling 2+ misses causes the Elder Guardian to swim away, forcing you to close distance again next round.',
-    loot: 'Roll d6: On 5 or 6, gain 3 Fish.',
-    onLootRoll: (roll) =>
-      roll >= 5
-        ? {
-          won: true,
-          reward: '3 Fish',
-          apply: (hero) => hero.adjustMaterial('Fish', 3),
-        }
-        : { won: false, reward: 'No loot' },
-    hooks: {
-      onCombatStart: (ctx) => {
-        ctx.combatState.mob.state.isClosingDistance = true;
-        ctx.combatState.mob.state.swamAway = false;
-        ctx.combatState.mob.state.closingThisRound = true;
-        ctx.roundState.messages.push({
-          type: 'notice',
-          text: '  Elder Guardian is far away! Roll at least 1 hit to close the distance!',
-        });
+    rulesText: 'Closing Distance: At the start of battle (and when it swims away), you must close the distance. Your hits deal 0 DMG and Elder Guardian attacks ignore Armor until you roll at least 1 hit.\nSwim Away: Rolling 2+ misses causes the Elder Guardian to swim away, forcing you to close distance again next round.',
+    lootText: 'Roll d6: On 5 or 6, gain 3 Fish.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Fish', count: { type: 'literal', value: 3 }, isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '3 Fish' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
       },
-
-      onRoundStart: (ctx) => {
-        // Check if it swam away last round
-        if (ctx.combatState.mob.state.swamAway) {
-          ctx.combatState.mob.state.isClosingDistance = true;
-          ctx.combatState.mob.state.swamAway = false;
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: '  Elder Guardian swam into the deep! You must close the distance again!',
-          });
-        }
-        // Lock round status so subsequent hook phases share the same state
-        ctx.combatState.mob.state.closingThisRound = !!ctx.combatState.mob.state.isClosingDistance;
-      },
-
-      onRollEvaluated: (ctx) => {
-        // 1. Double misses trigger Swim Away for the next turn
-        if (ctx.roundState.matchingMisses >= 2) {
-          ctx.combatState.mob.state.swamAway = true;
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: '  Double misses! Elder Guardian swims away (distance resets next turn)!',
-          });
-        }
-
-        // 2. Resolve current closing distance attempt
-        if (ctx.combatState.mob.state.closingThisRound) {
-          if (ctx.roundState.hits > 0) {
-            ctx.combatState.mob.state.isClosingDistance = false;
-            ctx.roundState.messages.push({
-              type: 'notice',
-              text: '  You swam close! Distance overcome for subsequent attacks.',
-            });
-          } else {
-            ctx.roundState.messages.push({
-              type: 'notice',
-              text: '  Failed to close distance! Elder Guardian remains out of reach.',
-            });
-          }
-        }
-      },
-
-      onDealDamage: (ctx) => {
-        // While closing distance, Elder Guardian hits ignore hero armor
-        if (ctx.combatState.mob.state.closingThisRound) {
-          for (const inst of ctx.roundState.mobDamageInstances) {
-            inst.appliesArmor = false;
-            inst.source = 'Elder Guardian Unblockable Beam';
-          }
-        }
-      },
-
-      onReceiveDamage: (ctx) => {
-        // While closing distance, all hero hits deal 0 damage
-        if (ctx.combatState.mob.state.closingThisRound) {
-          ctx.roundState.heroDamageInstances = [];
-          ctx.roundState.messages.push({
-            type: 'notice',
-            text: '  Closing Distance: Hero attacks deal 0 DMG this turn!',
-          });
-        }
-      },
+    ],
+    behavior: {
+      onCombatStart: [
+        { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: true } },
+        { type: 'set', target: 'mob.state.swamAway', value: { type: 'literal', value: false } },
+        { type: 'set', target: 'mob.state.closingThisRound', value: { type: 'literal', value: true } },
+        {
+          type: 'message',
+          messageType: 'notice',
+          text: { type: 'literal', value: '  Elder Guardian is far away! Roll at least 1 hit to close the distance!' },
+        },
+      ],
+      onRoundStart: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.swamAway' },
+          then: [
+            { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: true } },
+            { type: 'set', target: 'mob.state.swamAway', value: { type: 'literal', value: false } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '  Elder Guardian swam into the deep! You must close the distance again!' },
+            },
+          ],
+        },
+        {
+          type: 'set',
+          target: 'mob.state.closingThisRound',
+          value: { type: 'get', path: 'mob.state.isClosingDistance' },
+        },
+      ],
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'set', target: 'mob.state.swamAway', value: { type: 'literal', value: true } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '  Double misses! Elder Guardian swims away (distance resets next turn)!' },
+            },
+          ],
+        },
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.closingThisRound' },
+          then: [
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '>',
+                left: { type: 'get', path: 'round.hits' },
+                right: { type: 'literal', value: 0 },
+              },
+              then: [
+                { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: false } },
+                {
+                  type: 'message',
+                  messageType: 'notice',
+                  text: { type: 'literal', value: '  You swam close! Distance overcome for subsequent attacks.' },
+                },
+              ],
+              else: [
+                {
+                  type: 'message',
+                  messageType: 'notice',
+                  text: { type: 'literal', value: '  Failed to close distance! Elder Guardian remains out of reach.' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      onDealDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.closingThisRound' },
+          then: [
+            {
+              type: 'modify_damage_instances',
+              target: 'mob_damage',
+              appliesArmor: false,
+              source: 'Elder Guardian Unblockable Beam',
+            },
+          ],
+        },
+      ],
+      onReceiveDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.closingThisRound' },
+          then: [
+            { type: 'clear_damage', target: 'hero' },
+            {
+              type: 'message',
+              messageType: 'notice',
+              text: { type: 'literal', value: '  Closing Distance: Hero attacks deal 0 DMG this turn!' },
+            },
+          ],
+        },
+      ],
     },
   },
 ];

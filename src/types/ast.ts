@@ -1,5 +1,4 @@
-// src/types/ast.ts
-import { CombatLifecycleHooks } from './combat';
+import type { CombatLifecycleHooks } from './combat';
 
 // --- Expressions ---
 
@@ -17,7 +16,7 @@ export interface LiteralExpr {
 
 export interface GetExpr {
   type: 'get';
-  path: string; // e.g., "round.matchingMisses", "mob.defense", "flags.has_key"
+  path: string; // e.g., "round.matchingMisses", "mob.defense", "mob.state.fuse"
 }
 
 export interface BinaryExpr {
@@ -46,7 +45,7 @@ export interface HasItemExpr {
 
 export interface TemplateExpr {
   type: 'template';
-  template: string; // e.g. "You got ${rewardItem}!"
+  template: string; // e.g. "Damage doubled to ${mob.damage}!"
 }
 
 export type Expr =
@@ -67,9 +66,16 @@ export interface IfAction {
   else?: Action[];
 }
 
+export interface ForEachAction {
+  type: 'for_each';
+  list: Expr; // Expression resolving to an array (e.g. { type: 'get', path: 'round.missRolls' })
+  as: string; // Loop variable name injected into child scope
+  actions: Action[];
+}
+
 export interface SetAction {
   type: 'set';
-  target: string; // e.g., "mob.defense", "combat.ignoreArmor", "flags.quest_done"
+  target: string; // e.g. "mob.defense", "combat.ignoreArmor", "mob.state.fuse"
   value: Expr;
 }
 
@@ -91,21 +97,25 @@ export interface DealDamageAction {
 export interface ModifyDamageInstancesAction {
   type: 'modify_damage_instances';
   target: 'hero_damage' | 'mob_damage';
-  delta: Expr; // e.g., -1 to all instances
+  delta?: Expr;
+  amount?: Expr;
   min?: number;
+  appliesArmor?: boolean;
+  source?: string;
 }
 
 export interface ChangeHealthAction {
   type: 'change_health';
   target: 'hero' | 'mob';
-  amount: Expr; // Negative for direct health removal, positive for heal
+  amount: Expr; // Negative for damage, positive for healing
 }
 
 export interface InventoryAction {
   type: 'inventory';
   action: 'add' | 'remove';
-  itemId: string;
-  count?: Expr; // Defaults to 1
+  itemId?: string | Expr;
+  slot?: 'weapon' | 'armor' | 'pickaxe' | 'key';
+  count?: Expr;
   isMaterial?: boolean;
 }
 
@@ -126,6 +136,11 @@ export interface AddEffectAction {
   type: 'add_effect';
   effect: 'poison' | 'vex';
   amount?: Expr;
+}
+
+export interface ClearDamageAction {
+  type: 'clear_damage' | 'clear_mob_damage';
+  target?: 'hero' | 'mob';
 }
 
 export interface ClearMobDamageAction {
@@ -149,6 +164,7 @@ export interface LootAction {
 
 export type Action =
   | IfAction
+  | ForEachAction
   | SetAction
   | ModifyAction
   | DealDamageAction
@@ -158,6 +174,7 @@ export type Action =
   | FlagAction
   | MessageAction
   | AddEffectAction
+  | ClearDamageAction
   | ClearMobDamageAction
   | PreventDeathAction
   | ReturnAction

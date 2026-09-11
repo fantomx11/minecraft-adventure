@@ -56,10 +56,10 @@ export const REGIONS: Record<string, Region> = {
                 label: 'Inquire about the bandit break-in',
                 passageId: 'abandoned_shack',
                 condition: {
-                  type: 'flag',
-                  flag: 'golden_claw_recovered',
-                  comparator: '!=',
-                  value: true,
+                  type: 'binary',
+                  op: '!=',
+                  left: { type: 'get', path: 'flags.golden_claw_recovered' },
+                  right: { type: 'literal', value: true },
                 },
               },
             ],
@@ -193,7 +193,6 @@ export function validateWorldPackage(raw: unknown): OpenWorldPackage | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const candidate = raw as Record<string, any>;
 
-  // Handle format containing { regions, passages } or raw regions
   const regionsObj = candidate.regions || candidate;
   if (!regionsObj || typeof regionsObj !== 'object') return null;
 
