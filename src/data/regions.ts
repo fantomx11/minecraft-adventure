@@ -1,12 +1,15 @@
 import type { Region } from '../types/world';
 import type { Passage } from '../types/narrative';
 import { STORY_PASSAGES } from './storyPassages';
+import { MobConfig } from '../models/Mob';
+import { BESTIARY } from './bestiary';
 
 export const CUSTOM_WORLD_STORAGE_KEY = 'minecraft_custom_world_dataset';
 
 export interface OpenWorldPackage {
   regions: Record<string, Region>;
   passages: Record<string, Passage>;
+  mobs: Record<string, MobConfig>;
 }
 
 export const REGIONS: Record<string, Region> = {
@@ -228,5 +231,6 @@ export function getInitialWorldPackage(): OpenWorldPackage {
   return {
     regions: JSON.parse(JSON.stringify(REGIONS)),
     passages: JSON.parse(JSON.stringify(STORY_PASSAGES)),
+    mobs: JSON.parse(JSON.stringify(BESTIARY))
   };
 }

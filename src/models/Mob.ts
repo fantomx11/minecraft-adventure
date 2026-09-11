@@ -37,7 +37,7 @@ export class Mob extends Entity implements Required<CombatLifecycleHooks> {
       state
     });
 
-    this.#hooks = this.#compileHooks(behavior);
+    this.#hooks = this.#compileHooks(behavior || {});
   }
 
   #createHookHandler(ast: Action[]) {

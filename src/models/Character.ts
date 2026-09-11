@@ -4,14 +4,6 @@ import type { Item } from './Item';
 import type { TrackedMaterial, EquippedSlots, InventoryRule } from '../types/inventory';
 import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
 
-export interface SerializedCharacter extends EntityConfig {
-  restarts: number;
-  equipmentInventoryIds: string[];
-  equipped: EquippedSlots;
-  materials: Record<TrackedMaterial, number>;
-  materialRule: InventoryRule;
-}
-
 interface CharacterData {
   restarts: number;
   materialRule: InventoryRule;
@@ -19,6 +11,8 @@ interface CharacterData {
   equipped: EquippedSlots;
   materials: Record<TrackedMaterial, number>;
 }
+
+export type CharacterConfig = EntityConfig & CharacterData;
 
 const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
   Wood: 0,
@@ -37,18 +31,15 @@ const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
 export class Character extends Entity implements CombatLifecycleHooks {
   #data: CharacterData;
 
-  constructor(initialData?: Partial<SerializedCharacter>) {
-    super(
-      initialData?.name || 'Steve',
-      initialData?.maxHearts ?? 20,
-      initialData?.hearts ?? initialData?.health ?? 20
-    );
+  constructor({restarts, materialRule, equipmentInventoryIds, equipped, materials, ...entityConfig}: Partial<CharacterConfig>) {
+    const json = Object.assign({name: 'Steve', maxHearts: 20}, entityConfig);
+    super(json);
 
     this.#data = this.createReactiveStore({
-      restarts: Math.max(0, initialData?.restarts ?? 0),
-      materialRule: initialData?.materialRule || 'total',
-      equipmentInventoryIds: initialData?.equipmentInventoryIds
-        ? [...initialData.equipmentInventoryIds]
+      restarts: Math.max(0, restarts ?? 0),
+      materialRule: materialRule || 'total',
+      equipmentInventoryIds: equipmentInventoryIds
+        ? [...equipmentInventoryIds]
         : ['Wooden Pickaxe'],
       equipped: {
         weapon: initialData?.equipped?.weapon ?? null,
@@ -58,7 +49,7 @@ export class Character extends Entity implements CombatLifecycleHooks {
       },
       materials: {
         ...DEFAULT_MATERIALS,
-        ...(initialData?.materials || {}),
+        ...(materials || {}),
       },
     });
   }
@@ -224,7 +215,7 @@ export class Character extends Entity implements CombatLifecycleHooks {
   }
 
   // --- Serialization ---
-  public override toJSON(): SerializedCharacter {
+  public override toJSON(): CharacterConfig {
     return {
       ...super.toJSON(),
       health: this.hearts,
