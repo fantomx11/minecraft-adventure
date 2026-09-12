@@ -1,6 +1,7 @@
 import type { Character } from '../../models/Character';
 import { StatBadge } from '../ui/StatBadge';
 import { Icon } from '../ui/Icon';
+import { useObservable } from '../../hooks/useObservable';
 
 interface HudBarProps {
   hero: Character;
@@ -9,6 +10,8 @@ interface HudBarProps {
 }
 
 export function HudBar({ hero, onOpenSheet, onOpenOptions }: HudBarProps) {
+  useObservable(hero);
+  
   return (
     <header id="hud-bar">
       <div class="hud-stats">

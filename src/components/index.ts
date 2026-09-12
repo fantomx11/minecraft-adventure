@@ -15,6 +15,8 @@ export * from './views/ForestView';
 export * from './views/MiningView';
 export * from './views/CraftingView';
 export * from './views/NarrativeView';
+export * from './views/WorldMapView';
+export * from './views/PoiNodeView';
 
 // UI Primitives & Widgets
 export * from './ui/Icon';
@@ -29,3 +31,8 @@ export * from './ui/StatField';
 export * from './ui/StatusBar';
 export * from './ui/CombatLogStream';
 export * from './ui/DiceRoller';
+
+export * from './editor/ExpressionEditor';
+export * from './editor/ActionNodeEditor';
+export * from './editor/MobEditor';
+export * from './editor/MobManagerModal';

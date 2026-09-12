@@ -8,12 +8,14 @@ import { DieItem } from '../../types/dice';
 
 interface ForestViewProps {
   hero: Character;
+  grovesCleared: number;
   onUpdate: () => void;
   onGainMaterial: (mat: TrackedMaterial, amount?: number) => void;
   onNavigateCombat: (mobName: string) => void;
+  onGroveCleared: () => void;
 }
 
-export function ForestView({ hero, onUpdate, onGainMaterial, onNavigateCombat }: ForestViewProps) {
+export function ForestView({ onUpdate, onGainMaterial, onNavigateCombat, onGroveCleared, grovesCleared }: ForestViewProps) {
   const [message, setMessage] = useState('The canopy is dense. What will you do?');
 
   const handleForageRoll = (rolls: number[]): DieItem[] => {
@@ -51,7 +53,7 @@ export function ForestView({ hero, onUpdate, onGainMaterial, onNavigateCombat }:
       setMessage(`Ambush! A wild ${targetMob} emerges from the shadows!`);
       onNavigateCombat(targetMob);
     } else {
-      hero.forestCleared += 1;
+      onGroveCleared();
       onGainMaterial('Wood', 2);
       setMessage('Carved a path through the deep thickets (+2 Wood, +1 Grove Cleared).');
       onUpdate();
@@ -81,7 +83,7 @@ export function ForestView({ hero, onUpdate, onGainMaterial, onNavigateCombat }:
         </div>
 
         <div style={{ fontSize: '13px', marginTop: '12px' }}>
-          Groves Cleared: <strong>{hero.forestCleared}</strong>
+          Groves Cleared: <strong>{grovesCleared}</strong>
         </div>
 
         <StatusBar marginTop="16px">{message}</StatusBar>

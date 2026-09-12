@@ -1,17 +1,23 @@
 import { useState, useEffect } from 'preact/hooks';
-import { Character } from '../../models/Character';
-import { TrackedMaterial } from '../../types/inventory';
-import { ActiveView } from '../../App';
-import { Passage, PassageChoice, PassageReward } from '../../types/narrative';
+import type { Character } from '../../models/Character';
+import type { TrackedMaterial } from '../../types/inventory';
+import type { ActiveView, GameProgressionState } from '../../types/game';
+import type { Passage, PassageChoice } from '../../types/narrative';
 import { rollOnMobTable } from '../../data/storyPassages';
 import { PixelFrame } from '../ui/PixelFrame';
 import { StatusBar } from '../ui/StatusBar';
 import { Icon } from '../ui/Icon';
-import { IconName } from '../../data/icons';
+import type { IconName } from '../../data/icons';
+import { evaluateCondition, applyMutations, EvaluationContext } from '../../engine/evaluator';
 
 interface NarrativeViewProps {
   hero: Character;
   passages: Record<string, Passage>;
+  currentPassageId: string;
+  visitedPassages: string[];
+  forestCleared: number;
+  mineCleared: number;
+  onPassageChange: (id: string) => void;
   onUpdate: () => void;
   onNavigateView: (view: ActiveView) => void;
   onTriggerCombat: (
@@ -20,19 +26,25 @@ interface NarrativeViewProps {
     onDefeatPassageId?: string
   ) => void;
   onGainMaterial: (mat: TrackedMaterial, amount?: number) => void;
+  game?: GameProgressionState;
 }
 
 export function NarrativeView({
   hero,
   passages,
+  currentPassageId,
+  visitedPassages,
+  forestCleared,
+  mineCleared,
+  onPassageChange,
   onUpdate,
   onNavigateView,
   onTriggerCombat,
   onGainMaterial,
+  game,
 }: NarrativeViewProps) {
   const firstPassageId = Object.keys(passages)[0] || 'start';
-  const passage = passages[hero.currentPassageId] || passages[firstPassageId];
-  const [grantNotice, setGrantNotice] = useState<string | null>(null);
+  const passage = passages[currentPassageId] || passages[firstPassageId];
   const [diceCheckResult, setDiceCheckResult] = useState<{
     roll: number;
     target: number;
@@ -45,67 +57,32 @@ export function NarrativeView({
     mob: string;
   } | null>(null);
 
-  // Evaluate auto-grant on entering a passage
+  const evalCtx: EvaluationContext = {
+    hero,
+    game: game || ({
+      sandbox: { forestCleared, mineCleared },
+      narrative: { visitedPassages, currentPassageId },
+      openWorld: { questFlags: {}, discoveredRegions: [], discoveredPoiIds: [], counters: {} },
+    } as any),
+    onGainMaterial,
+  };
+
   useEffect(() => {
     setDiceCheckResult(null);
     setTableRollResult(null);
-    if (!hero.visitedPassages.includes(passage.id)) {
-      hero.visitedPassages.push(passage.id);
-      if (passage.autoGrant) {
-        applyReward(passage.autoGrant);
-        setGrantNotice(passage.autoGrant.message || 'Discovered new resources!');
-      } else {
-        setGrantNotice(null);
+
+    if (!visitedPassages.includes(passage.id)) {
+      visitedPassages.push(passage.id);
+      if (passage.onEnterMutations?.length) {
+        applyMutations(passage.onEnterMutations, evalCtx);
       }
       onUpdate();
-    } else {
-      setGrantNotice(null);
     }
-  }, [hero.currentPassageId]);
-
-  const applyReward = (reward: PassageReward) => {
-    if (reward.materials) {
-      for (const [mat, qty] of Object.entries(reward.materials) as [TrackedMaterial, number][]) {
-        onGainMaterial(mat, qty);
-      }
-    }
-    if (reward.equipment) {
-      for (const item of reward.equipment) {
-        if (!hero.hasItem(item)) {
-          hero.addEquipment(item);
-        }
-      }
-    }
-    if (reward.healthDelta) {
-      hero.changeHealth(reward.healthDelta);
-    }
-    onUpdate();
-  };
+  }, [currentPassageId]);
 
   const checkRequirement = (choice: PassageChoice): { allowed: boolean; reason?: string } => {
-    if (choice.requiresItem && !hero.hasItem(choice.requiresItem)) {
-      return { allowed: false, reason: `Requires: ${choice.requiresItem}` };
-    }
-    if (choice.requiresMaterial) {
-      const held = hero.materials[choice.requiresMaterial.material] || 0;
-      if (held < choice.requiresMaterial.count) {
-        return {
-          allowed: false,
-          reason: `Requires: ${choice.requiresMaterial.count}x ${choice.requiresMaterial.material}`,
-        };
-      }
-    }
-    if (choice.requiresGrovesCleared && hero.forestCleared < choice.requiresGrovesCleared) {
-      return {
-        allowed: false,
-        reason: `Requires ${choice.requiresGrovesCleared} Groves Cleared (${hero.forestCleared}/${choice.requiresGrovesCleared})`,
-      };
-    }
-    if (choice.requiresMinesCleared && hero.mineCleared < choice.requiresMinesCleared) {
-      return {
-        allowed: false,
-        reason: `Requires ${choice.requiresMinesCleared} Mines Cleared (${hero.mineCleared}/${choice.requiresMinesCleared})`,
-      };
+    if (choice.condition && !evaluateCondition(choice.condition, evalCtx)) {
+      return { allowed: false, reason: choice.lockedReason || 'Locked' };
     }
     return { allowed: true };
   };
@@ -114,14 +91,9 @@ export function NarrativeView({
     const { allowed } = checkRequirement(choice);
     if (!allowed) return;
 
-    if (choice.consumeMaterial) {
-      hero.adjustMaterial(choice.consumeMaterial.material, -choice.consumeMaterial.count);
-    }
-    if (choice.consumeItem) {
-      hero.removeEquipment(choice.consumeItem);
-    }
-    if (choice.grantReward) {
-      applyReward(choice.grantReward);
+    if (choice.mutations) {
+      applyMutations(choice.mutations, evalCtx);
+      onUpdate();
     }
 
     if (choice.type === 'dice_check' && choice.diceCheck) {
@@ -153,21 +125,15 @@ export function NarrativeView({
       }
       return;
     }
+
     if (choice.type === 'view' && choice.targetView) {
       onNavigateView(choice.targetView);
       return;
     }
 
     if (choice.targetPassageId) {
-      hero.currentPassageId = choice.targetPassageId;
-      onUpdate();
+      onPassageChange(choice.targetPassageId);
     }
-  };
-
-  const handleRollCombatTable = () => {
-    if (!passage.triggerCombat?.mobTable) return;
-    const res = rollOnMobTable(passage.triggerCombat.mobTable);
-    setTableRollResult(res);
   };
 
   const handleFightTriggeredMob = (mobName: string) => {
@@ -180,22 +146,20 @@ export function NarrativeView({
     }
   };
 
+  const renderedChoices = passage.choices.filter((choice) => {
+    const { allowed } = checkRequirement(choice);
+    const behavior = choice.behavior || 'disable';
+    return allowed || behavior !== 'hide';
+  });
+
   return (
     <section class="view-panel active">
-      {/* Passage Narrative Frame */}
       <PixelFrame
         title={passage.title.toUpperCase()}
         icon={passage.icon ? (passage.icon as IconName) : undefined}
       >
         <p class="narrative-prose">{passage.text}</p>
 
-        {grantNotice && (
-          <div class="narrative-banner grant-banner">
-            <Icon name="spark" /> <strong>{grantNotice}</strong>
-          </div>
-        )}
-
-        {/* Combat Trigger Section */}
         {passage.triggerCombat && (
           <div class="narrative-combat-box">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -205,7 +169,6 @@ export function NarrativeView({
             <p style={{ margin: '0 0 10px 0', fontSize: '13px' }}>
               {passage.triggerCombat.introText || 'A hostile mob stands in your path!'}
             </p>
-
             {passage.triggerCombat.mob && (
               <button
                 type="button"
@@ -215,7 +178,6 @@ export function NarrativeView({
                 FIGHT {passage.triggerCombat.mob.toUpperCase()}
               </button>
             )}
-
             {passage.triggerCombat.mobTable && (
               <div>
                 <div style={{ fontSize: '12px', marginBottom: '8px' }}>
@@ -245,7 +207,7 @@ export function NarrativeView({
                   <button
                     type="button"
                     class="pixel-btn btn-primary"
-                    onClick={handleRollCombatTable}
+                    onClick={() => setTableRollResult(rollOnMobTable(passage.triggerCombat!.mobTable!))}
                   >
                     ROLL ENCOUNTER (d6)
                   </button>
@@ -255,35 +217,22 @@ export function NarrativeView({
           </div>
         )}
 
-        {/* Unlocked Locations from text */}
         {passage.accessibleViews && passage.accessibleViews.length > 0 && (
           <div class="narrative-locations-box">
             <span class="narrative-section-tag">UNLOCKED LOCATIONS</span>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
               {passage.accessibleViews.includes('forest') && (
-                <button
-                  type="button"
-                  class="pixel-btn btn-success"
-                  onClick={() => onNavigateView('forest')}
-                >
+                <button type="button" class="pixel-btn btn-success" onClick={() => onNavigateView('forest')}>
                   <Icon name="tree" /> EXPLORE FOREST
                 </button>
               )}
               {passage.accessibleViews.includes('mining') && (
-                <button
-                  type="button"
-                  class="pixel-btn btn-primary"
-                  onClick={() => onNavigateView('mining')}
-                >
+                <button type="button" class="pixel-btn btn-primary" onClick={() => onNavigateView('mining')}>
                   <Icon name="pickaxe" /> ENTER MINES
                 </button>
               )}
               {passage.accessibleViews.includes('crafting') && (
-                <button
-                  type="button"
-                  class="pixel-btn btn-active"
-                  onClick={() => onNavigateView('crafting')}
-                >
+                <button type="button" class="pixel-btn btn-active" onClick={() => onNavigateView('crafting')}>
                   <Icon name="crafting" /> CRAFTING BENCH
                 </button>
               )}
@@ -291,12 +240,8 @@ export function NarrativeView({
           </div>
         )}
 
-        {/* Dice Check Resolution Box */}
         {diceCheckResult && (
-          <div
-            class={`narrative-banner ${diceCheckResult.passed ? 'check-success' : 'check-failure'
-              }`}
-          >
+          <div class={`narrative-banner ${diceCheckResult.passed ? 'check-success' : 'check-failure'}`}>
             <div>
               <strong>
                 {diceCheckResult.passed ? 'CHECK SUCCEEDED' : 'CHECK FAILED'} (Rolled{' '}
@@ -309,21 +254,19 @@ export function NarrativeView({
               class="pixel-btn btn-active"
               style={{ marginTop: '8px' }}
               onClick={() => {
-                hero.currentPassageId = diceCheckResult.nextPassageId;
+                onPassageChange(diceCheckResult.nextPassageId);
                 setDiceCheckResult(null);
-                onUpdate();
               }}
             >
-              CONTINUE →
+              CONTINUE
             </button>
           </div>
         )}
 
-        {/* Choices Section */}
         <div style={{ marginTop: '24px' }}>
           <span class="narrative-section-tag">WHAT WILL YOU DO?</span>
           <div class="narrative-choices-grid">
-            {passage.choices.map((choice, idx) => {
+            {renderedChoices.map((choice, idx) => {
               const { allowed, reason } = checkRequirement(choice);
               return (
                 <button
@@ -338,14 +281,7 @@ export function NarrativeView({
                     {choice.type === 'view' && <Icon name="spark" />}
                     {choice.text}
                   </span>
-                  {!allowed && reason && (
-                    <span class="choice-badge badge-locked">[{reason}]</span>
-                  )}
-                  {allowed && choice.requiresItem && (
-                    <span class="choice-badge badge-ready">
-                      [✓ Has {choice.requiresItem}]
-                    </span>
-                  )}
+                  {!allowed && reason && <span class="choice-badge badge-locked">[{reason}]</span>}
                 </button>
               );
             })}

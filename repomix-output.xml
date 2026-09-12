@@ -1,0 +1,4807 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: src/**/*.ts, *.tsx
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  components/
+    index.ts
+  controllers/
+    index.ts
+    NarrativeController.ts
+    OpenWorldController.ts
+    SandboxController.ts
+  data/
+    bestiary.ts
+    icons.ts
+    recipes.ts
+    regions.ts
+    storyPassages.ts
+  engine/
+    astInterpreter.ts
+    CombatEngine.ts
+    evaluator.ts
+    mobRegistry.ts
+    travelResolvers.ts
+  hooks/
+    useObservable.ts
+  models/
+    Character.ts
+    Effects.ts
+    Entity.ts
+    GameSave.ts
+    GameStore.ts
+    Item.ts
+    Mob.ts
+    Observable.ts
+  types/
+    ast.ts
+    combat.ts
+    controller.ts
+    dice.ts
+    game.ts
+    inventory.ts
+    narrative.ts
+    package.ts
+    world.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/controllers/index.ts">
+import type { GameModeId } from '../types/game';
+import type { GameModeController } from '../types/controller';
+import { SandboxModeController } from './SandboxController';
+import { NarrativeModeController } from './NarrativeController';
+import { OpenWorldModeController } from './OpenWorldController';
+
+export const MODE_CONTROLLERS: Record<GameModeId, GameModeController> = {
+  sandbox: new SandboxModeController(),
+  narrative: new NarrativeModeController(),
+  open_world: new OpenWorldModeController(),
+};
+
+export function getModeController(modeId: GameModeId): GameModeController {
+  return MODE_CONTROLLERS[modeId] || MODE_CONTROLLERS.sandbox;
+}
+</file>
+
+<file path="src/engine/mobRegistry.ts">
+import { BESTIARY } from '../data/bestiary';
+import { Mob, type MobConfig } from '../models/Mob';
+
+// Convert default bestiary array into a keyed lookup map
+const DEFAULT_MOB_MAP: Record<string, MobConfig> = Object.fromEntries(
+  BESTIARY.map((m) => [m.id || m.name.toLowerCase().replace(/\s+/g, '_'), m])
+);
+
+export class MobRegistry {
+  /**
+   * Resolves a MobConfig by ID or Display Name.
+   * Checks custom mobs first, then falls back to default BESTIARY.
+   */
+  public static findConfig(
+    query: string,
+    customMobs: Record<string, MobConfig> = {}
+  ): MobConfig | undefined {
+    const normalized = query.toLowerCase().trim().replace(/\s+/g, '_');
+
+    // 1. Direct key match in custom mobs
+    if (customMobs[query]) return customMobs[query];
+    if (customMobs[normalized]) return customMobs[normalized];
+
+    // 2. Name search in custom mobs
+    const customMatch = Object.values(customMobs).find(
+      (m) => m.name.toLowerCase() === query.toLowerCase()
+    );
+    if (customMatch) return customMatch;
+
+    // 3. Fallback to default Bestiary
+    if (DEFAULT_MOB_MAP[normalized]) return DEFAULT_MOB_MAP[normalized];
+    return Object.values(DEFAULT_MOB_MAP).find(
+      (m) => m.name.toLowerCase() === query.toLowerCase()
+    );
+  }
+
+  /**
+   * Instantiates a functional Mob instance ready for CombatEngine.
+   */
+  public static createMob(
+    query: string,
+    customMobs: Record<string, MobConfig> = {}
+  ): Mob {
+    const config = this.findConfig(query, customMobs);
+    if (!config) {
+      console.warn(`[MobRegistry] Unknown mob: "${query}". Spawning fallback Zombie.`);
+      return new Mob(DEFAULT_MOB_MAP['zombie']);
+    }
+    return new Mob(config);
+  }
+
+  /**
+   * Returns a merged dictionary of default bestiary and custom mobs.
+   */
+  public static getAllAvailableConfigs(
+    customMobs: Record<string, MobConfig> = {}
+  ): Record<string, MobConfig> {
+    return {
+      ...DEFAULT_MOB_MAP,
+      ...customMobs,
+    };
+  }
+}
+</file>
+
+<file path="src/hooks/useObservable.ts">
+import { useState, useEffect } from 'preact/hooks';
+import type { Observable } from '../models/Observable';
+
+export function useObservable(...targets: (Observable | null | undefined)[]): void {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const unsubscribers = targets
+      .filter((t): t is Observable => Boolean(t))
+      .map((t) => t.subscribe(() => setTick((v) => v + 1)));
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, targets);
+}
+</file>
+
+<file path="src/models/Effects.ts">
+import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
+
+export class VexEffect implements CombatLifecycleHooks {
+  public id: string;
+  public name: string = 'Vex';
+
+  constructor() {
+    this.id = `vex_${Math.random().toString(36).substring(2, 9)}`;
+  }
+
+  public onRollEvaluated(ctx: CombatContext): void {
+    if (ctx.roundState.matchingHits >= 2 && !ctx.roundState.vexBanishedThisRound) {
+      ctx.roundState.vexBanishedThisRound = true;
+      ctx.combatState.effects = ctx.combatState.effects.filter(
+        (e) => (e as VexEffect).id !== this.id
+      );
+      ctx.roundState.messages.push({
+        type: 'notice',
+        text: '✨ Double hits banished 1 Vex!',
+      });
+    }
+  }
+
+  public onDealDamage(ctx: CombatContext): void {
+    ctx.roundState.mobDamageInstances.push({
+      amount: 1,
+      source: 'Vex Attack',
+      appliesArmor: true,
+    });
+  }
+}
+
+export class PoisonEffect implements CombatLifecycleHooks {
+  public id: string;
+  public amount: number;
+
+  constructor(amount: number = 1) {
+    this.id = `poison_${Math.random().toString(36).substring(2, 9)}`;
+    this.amount = amount;
+  }
+
+  public onRoundStart(ctx: CombatContext): void {
+    ctx.combatState.hero.changeHealth(-this.amount);
+    ctx.roundState.messages.push({
+      type: 'miss',
+      text: `☠️ Poison deals ${this.amount} damage directly to your hearts!`,
+    });
+  }
+}
+</file>
+
+<file path="src/models/GameStore.ts">
+import { Observable } from './Observable';
+import type {
+  GameProgressionState,
+  GameModeId,
+  ActiveView,
+  SandboxProgression,
+  NarrativeProgression,
+  OpenWorldProgression,
+} from '../types/game';
+
+export class GameStore extends Observable {
+  #data: GameProgressionState;
+
+  constructor(initialData: GameProgressionState) {
+    super();
+    // Deep-proxied reactive store
+    this.#data = this.createReactiveStore(initialData);
+  }
+
+  // --- Top-Level Accessors ---
+  public get mode(): GameModeId {
+    return this.#data.mode;
+  }
+  public set mode(val: GameModeId) {
+    this.#data.mode = val;
+  }
+
+  public get activeView(): ActiveView {
+    return this.#data.activeView;
+  }
+  public set activeView(val: ActiveView) {
+    this.#data.activeView = val;
+  }
+
+  // --- Sub-Progression Accessors (Mutations on child properties trigger notify) ---
+  public get sandbox(): SandboxProgression {
+    return this.#data.sandbox;
+  }
+
+  public get narrative(): NarrativeProgression {
+    return this.#data.narrative;
+  }
+
+  public get openWorld(): OpenWorldProgression {
+    return this.#data.openWorld;
+  }
+
+  // --- Serialization ---
+  public toJSON(): GameProgressionState {
+    return JSON.parse(JSON.stringify(this.#data));
+  }
+}
+</file>
+
+<file path="src/models/Item.ts">
+import type { EquipmentConfig, EquipmentType } from '../types/inventory';
+import type { CombatLifecycleHooks } from '../types/combat';
+
+export class Item {
+  public name: string;
+  public type: EquipmentType;
+  public attack: number;
+  public damage: number;
+  public armorValue: number;
+  public diceBonus: number;
+  public description: string;
+  public hooks?: CombatLifecycleHooks;
+
+  constructor(config: EquipmentConfig) {
+    this.name = config.name;
+    this.type = config.type;
+    this.attack = config.attack ?? 1;
+    this.damage = config.damage ?? 1;
+    this.armorValue = config.armorValue ?? 0;
+    this.diceBonus = config.diceBonus ?? 1;
+    this.description = config.description ?? '';
+    this.hooks = config.hooks;
+  }
+}
+</file>
+
+<file path="src/models/Observable.ts">
+export class Observable {
+  #listeners = new Set<() => void>();
+  #notifyScheduled = false;
+
+  public subscribe(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  public notify(): void {
+    if (this.#notifyScheduled) return;
+    this.#notifyScheduled = true;
+
+    // Batches synchronous mutations across the call stack into one render pass
+    queueMicrotask(() => {
+      this.#notifyScheduled = false;
+      for (const listener of this.#listeners) {
+        listener();
+      }
+    });
+  }
+
+  /**
+   * Recursively wraps a target object/array in a Proxy store.
+   * Any mutation on the target or its nested properties triggers this.notify().
+   */
+  protected createReactiveStore<T extends object>(target: T): T {
+    const self = this;
+    const proxyCache = new WeakMap<object, any>();
+
+    function createProxy<O extends object>(obj: O): O {
+      if (proxyCache.has(obj)) {
+        return proxyCache.get(obj);
+      }
+
+      const handler: ProxyHandler<O> = {
+        get(t, prop, receiver) {
+          const val = Reflect.get(t, prop, receiver);
+          if (val !== null && typeof val === 'object') {
+            return createProxy(val);
+          }
+          return val;
+        },
+        set(t, prop, value, receiver) {
+          const old = (t as any)[prop];
+          if (old === value) return true;
+
+          const result = Reflect.set(t, prop, value, receiver);
+          self.notify();
+          return result;
+        },
+        deleteProperty(t, prop) {
+          const result = Reflect.deleteProperty(t, prop);
+          self.notify();
+          return result;
+        },
+      };
+
+      const proxy = new Proxy(obj, handler);
+      proxyCache.set(obj, proxy);
+      return proxy;
+    }
+
+    return createProxy(target);
+  }
+}
+</file>
+
+<file path="src/types/dice.ts">
+export type DieTagVariant = 'hit' | 'miss' | 'neutral' | 'bonus';
+
+export interface DieItem {
+  value: number;
+  tag?: string;
+  variant?: DieTagVariant;
+  selected?: boolean;
+}
+</file>
+
+<file path="src/types/package.ts">
+import type { GameModeId } from './game';
+import type { Region } from './world';
+import type { Passage } from './narrative';
+import type { MobConfig } from '../models/Mob';
+
+export interface GamePackageMetadata {
+  title: string;
+  author?: string;
+  version: number;
+  description?: string;
+}
+
+export interface GamePackage {
+  mode: GameModeId; // 'narrative' | 'open_world'
+  metadata: GamePackageMetadata;
+  mobs: Record<string, MobConfig>; // Keyed by Mob ID
+  passages?: Record<string, Passage>;
+  regions?: Record<string, Region>;
+  startPassageId?: string; // For narrative packages
+  startRegionId?: string;  // For open world packages
+}
+
+export function validateGamePackage(raw: unknown): GamePackage | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const pkg = raw as Partial<GamePackage>;
+
+  if (pkg.mode !== 'narrative' && pkg.mode !== 'open_world') return null;
+  if (!pkg.mobs || typeof pkg.mobs !== 'object') return null;
+
+  if (pkg.mode === 'narrative' && (!pkg.passages || typeof pkg.passages !== 'object')) {
+    return null;
+  }
+  if (pkg.mode === 'open_world' && (!pkg.regions || typeof pkg.regions !== 'object')) {
+    return null;
+  }
+
+  return pkg as GamePackage;
+}
+</file>
+
+<file path="src/controllers/NarrativeController.ts">
+import type { GameModeController, EngineContext, CombatTriggerPayload, ReturnBannerDescriptor } from '../types/controller';
+import type { ActiveView } from '../types/game';
+import type { TrackedMaterial } from '../types/inventory';
+
+export class NarrativeModeController implements GameModeController {
+  public readonly id = 'narrative';
+  public readonly label = 'Narrative Mode';
+  public readonly defaultView: ActiveView = 'narrative';
+  public readonly allowInventoryEditing = false;
+
+  public getAccessibleViews(ctx: EngineContext): ActiveView[] {
+    const currentPassage = ctx.passages[ctx.game.narrative.currentPassageId];
+    const allowed: ActiveView[] = ['narrative'];
+    if (currentPassage?.accessibleViews) {
+      allowed.push(...currentPassage.accessibleViews);
+    }
+    return allowed;
+  }
+
+  public canNavigateToView(targetView: ActiveView, ctx: EngineContext): boolean {
+    if (targetView === 'combat') return true;
+    return this.getAccessibleViews(ctx).includes(targetView);
+  }
+
+  public getReturnBanner(ctx: EngineContext): ReturnBannerDescriptor | null {
+    if (ctx.game.activeView === 'narrative' || ctx.game.activeView === 'combat') {
+      return null;
+    }
+    const currentPassage = ctx.passages[ctx.game.narrative.currentPassageId];
+    return {
+      label: `RETURN TO STORY (${currentPassage?.title?.toUpperCase() || 'PASSAGE'})`,
+      action: () => ctx.setActiveView('narrative'),
+    };
+  }
+
+  public onActivityCleared(type: 'forest' | 'mining', ctx: EngineContext): void {
+    if (type === 'forest') ctx.game.sandbox.forestCleared += 1;
+    if (type === 'mining') ctx.game.sandbox.mineCleared += 1;
+    ctx.saveState();
+  }
+
+  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
+    ctx.setActiveView('combat');
+  }
+
+  public resolveCombatExit(
+    outcome: 'victory' | 'defeat',
+    ctx: EngineContext,
+    runtimeContext?: Record<string, any>
+  ): void {
+    if (outcome === 'victory' && runtimeContext?.victoryPassageId) {
+      ctx.game.narrative.currentPassageId = runtimeContext.victoryPassageId;
+    } else {
+      ctx.hero.respawn();
+      ctx.game.narrative.currentPassageId = runtimeContext?.defeatPassageId || 'combat_defeat';
+    }
+    ctx.setActiveView('narrative');
+    ctx.saveState();
+  }
+
+  public handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void {
+    const added = ctx.hero.adjustMaterial(mat, amount);
+    if (added === 0 && ctx.hero.materialRule === 'total' && ctx.hero.totalMaterialsCount >= 5) {
+      ctx.setPendingMaterial(mat);
+    } else {
+      ctx.saveState();
+    }
+  }
+
+  public handleHeroDefeated(ctx: EngineContext): void {
+    ctx.hero.respawn();
+    ctx.game.narrative.currentPassageId = 'combat_defeat';
+    ctx.setActiveView('narrative');
+    ctx.saveState();
+  }
+}
+</file>
+
+<file path="src/controllers/OpenWorldController.ts">
+import type { GameModeController, EngineContext, CombatTriggerPayload, ReturnBannerDescriptor } from '../types/controller';
+import type { ActiveView } from '../types/game';
+import type { TrackedMaterial } from '../types/inventory';
+
+export class OpenWorldModeController implements GameModeController {
+  public readonly id = 'open_world';
+  public readonly label = 'Open World Mode';
+  public readonly defaultView: ActiveView = 'world_map';
+  public readonly allowInventoryEditing = false;
+
+  public getAccessibleViews(ctx: EngineContext): ActiveView[] {
+    const views: ActiveView[] = ['world_map'];
+    if (ctx.game.openWorld.currentPoiId) {
+      views.push('poi_node');
+      const region = ctx.regions[ctx.game.openWorld.currentRegionId];
+      const poi = region?.pointsOfInterest.find((p) => p.id === ctx.game.openWorld.currentPoiId);
+      const node = poi?.nodes[ctx.game.openWorld.currentNodeId || poi.entryNodeId];
+      if (node?.accessibleViews) {
+        views.push(...node.accessibleViews);
+      }
+    }
+    return views;
+  }
+
+  public canNavigateToView(targetView: ActiveView, ctx: EngineContext): boolean {
+    return this.getAccessibleViews(ctx).includes(targetView);
+  }
+
+  public getReturnBanner(ctx: EngineContext): ReturnBannerDescriptor | null {
+    if (ctx.game.activeView === 'world_map' || ctx.game.activeView === 'poi_node') {
+      return null;
+    }
+    if (ctx.game.openWorld.currentPoiId) {
+      return {
+        label: 'RETURN TO LOCATION',
+        action: () => ctx.setActiveView('poi_node'),
+      };
+    }
+    return {
+      label: 'RETURN TO WORLD MAP',
+      action: () => ctx.setActiveView('world_map'),
+    };
+  }
+
+  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
+    ctx.setActiveView('combat');
+  }
+
+  public resolveCombatExit(outcome: 'victory' | 'defeat', ctx: EngineContext): void {
+    if (outcome === 'defeat') {
+      ctx.hero.respawn();
+      ctx.game.openWorld.currentPoiId = null;
+      ctx.game.openWorld.currentNodeId = null;
+      ctx.game.openWorld.counters.trekBonus = 0;
+      ctx.setActiveView('world_map');
+    } else {
+      ctx.setActiveView(ctx.game.openWorld.currentPoiId ? 'poi_node' : 'world_map');
+    }
+    ctx.saveState();
+  }
+
+  public handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void {
+    const added = ctx.hero.adjustMaterial(mat, amount);
+    if (added === 0 && ctx.hero.materialRule === 'total' && ctx.hero.totalMaterialsCount >= 5) {
+      ctx.setPendingMaterial(mat);
+    } else {
+      ctx.saveState();
+    }
+  }
+
+  public handleHeroDefeated(ctx: EngineContext): void {
+    ctx.hero.respawn();
+    ctx.game.openWorld.currentPoiId = null;
+    ctx.game.openWorld.currentNodeId = null;
+    ctx.game.openWorld.counters.trekBonus = 0;
+    ctx.setActiveView('world_map');
+    ctx.saveState();
+  }
+}
+</file>
+
+<file path="src/controllers/SandboxController.ts">
+import type { GameModeController, EngineContext, CombatTriggerPayload, ReturnBannerDescriptor } from '../types/controller';
+import type { ActiveView } from '../types/game';
+import type { TrackedMaterial } from '../types/inventory';
+
+export class SandboxModeController implements GameModeController {
+  public readonly id = 'sandbox';
+  public readonly label = 'Sandbox Mode';
+  public readonly defaultView: ActiveView = 'combat';
+  public readonly allowInventoryEditing = true;
+
+  public getAccessibleViews(): ActiveView[] {
+    return ['combat', 'forest', 'mining', 'crafting'];
+  }
+
+  public canNavigateToView(targetView: ActiveView): boolean {
+    return this.getAccessibleViews().includes(targetView);
+  }
+
+  public getReturnBanner(): ReturnBannerDescriptor | null {
+    return null;
+  }
+
+  public onActivityCleared(type: 'forest' | 'mining', ctx: EngineContext): void {
+    if (type === 'forest') ctx.game.sandbox.forestCleared += 1;
+    if (type === 'mining') ctx.game.sandbox.mineCleared += 1;
+    ctx.saveState();
+  }
+
+  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
+    ctx.setActiveView('combat');
+  }
+
+  public resolveCombatExit(_outcome: 'victory' | 'defeat', ctx: EngineContext): void {
+    ctx.setActiveView('combat');
+  }
+
+  public handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void {
+    const added = ctx.hero.adjustMaterial(mat, amount);
+    if (added === 0 && ctx.hero.materialRule === 'total' && ctx.hero.totalMaterialsCount >= 5) {
+      ctx.setPendingMaterial(mat);
+    } else {
+      ctx.saveState();
+    }
+  }
+
+  public handleHeroDefeated(ctx: EngineContext): void {
+    ctx.hero.respawn();
+    ctx.saveState();
+  }
+}
+</file>
+
+<file path="src/engine/astInterpreter.ts">
+import type { Expr, Action, BinaryOperator } from '../types/ast';
+import { PoisonEffect, VexEffect } from '../models/Effects';
+import { TRACKED_MATERIALS } from '../data/recipes';
+
+export type RuntimeScope = Record<string, any>;
+
+export class AstInterpreter {
+  public static hasActionType(actions: Action[] | undefined, targetType: Action['type']): boolean {
+    if (!actions || !Array.isArray(actions)) return false;
+
+    for (const act of actions) {
+      if (act.type === targetType) return true;
+      if (act.type === 'if') {
+        if (this.hasActionType(act.then, targetType)) return true;
+        if (act.else && this.hasActionType(act.else, targetType)) return true;
+      }
+      if (act.type === 'for_each') {
+        if (this.hasActionType(act.actions, targetType)) return true;
+      }
+    }
+
+    return false;
+  }
+
+  public static evalExpr(expr: Expr, scope: RuntimeScope): any {
+    switch (expr.type) {
+      case 'literal':
+        return expr.value;
+
+      case 'get':
+        return this.resolvePath(scope, expr.path);
+
+      case 'template':
+        return expr.template.replace(/\$\{([^}]+)\}/g, (_, path) => {
+          const val = this.resolvePath(scope, path.trim());
+          return val !== undefined ? String(val) : '';
+        });
+
+      case 'binary': {
+        const left = this.evalExpr(expr.left, scope);
+        const right = this.evalExpr(expr.right, scope);
+        return this.applyBinaryOp(expr.op, left, right);
+      }
+
+      case 'unary': {
+        const operand = this.evalExpr(expr.operand, scope);
+        if (expr.op === 'not') return !operand;
+        if (expr.op === '-') return -Number(operand);
+        return operand;
+      }
+
+      case 'dice': {
+        let sum = 0;
+        for (let i = 0; i < expr.count; i++) {
+          sum += Math.floor(Math.random() * expr.sides) + 1;
+        }
+        return sum;
+      }
+
+      case 'has_item':
+        return scope.hero ? scope.hero.hasItem(expr.itemId) : false;
+    }
+  }
+
+  public static execute(
+    actions: Action[] | undefined,
+    scope: RuntimeScope
+  ): Record<string, any> {
+    const returns: Record<string, any> = {};
+    if (!actions || actions.length === 0) return returns;
+
+    this.#executeBlock(actions, scope, returns);
+    return returns;
+  }
+
+  public static executeRequire(
+    actions: Action[] | undefined,
+    scope: RuntimeScope,
+    requiredType: Action['type']
+  ): Record<string, any> {
+    if (!actions || actions.length === 0 || !this.hasActionType(actions, requiredType)) {
+      throw new Error(
+        `[AstInterpreter] Validation Failed: Script must declare at least one '${requiredType}' action.`
+      );
+    }
+
+    return this.execute(actions, scope);
+  }
+
+  static #executeBlock(
+    actions: Action[],
+    scope: RuntimeScope,
+    returns: Record<string, any>
+  ): boolean {
+    for (const action of actions) {
+      switch (action.type) {
+        case 'return': {
+          returns[action.key] = this.evalExpr(action.value, scope);
+          return true;
+        }
+
+        case 'loot_action': {
+          returns.reward = this.evalExpr(action.reward, scope);
+          returns.won = true;
+          return true;
+        }
+
+        case 'if': {
+          const passed = Boolean(this.evalExpr(action.condition, scope));
+          const branch = passed ? action.then : action.else;
+          if (branch && branch.length > 0) {
+            if (this.#executeBlock(branch, scope, returns)) return true;
+          }
+          break;
+        }
+
+        case 'for_each': {
+          const list = this.evalExpr(action.list, scope);
+          if (Array.isArray(list)) {
+            for (const item of list) {
+              const loopScope = { ...scope, [action.as]: item };
+              if (this.#executeBlock(action.actions, loopScope, returns)) return true;
+            }
+          }
+          break;
+        }
+
+        case 'set': {
+          this.assignPath(scope, action.target, this.evalExpr(action.value, scope));
+          break;
+        }
+
+        case 'modify': {
+          const delta = Number(this.evalExpr(action.value, scope)) || 0;
+          const current = Number(this.resolvePath(scope, action.target)) || 0;
+          const next = action.op === 'multiply' ? current * delta : current + delta;
+          this.assignPath(scope, action.target, next);
+          break;
+        }
+
+        case 'deal_damage': {
+          if (!scope.round) break;
+          const amount = Number(this.evalExpr(action.amount, scope)) || 0;
+          const inst = {
+            amount,
+            source: action.source,
+            appliesArmor: action.appliesArmor ?? true,
+          };
+          if (action.target === 'hero') {
+            scope.round.mobDamageInstances.push(inst);
+          } else {
+            scope.round.heroDamageInstances.push(inst);
+          }
+          break;
+        }
+
+        case 'modify_damage_instances': {
+          if (!scope.round) break;
+          const delta = action.delta !== undefined ? Number(this.evalExpr(action.delta, scope)) || 0 : undefined;
+          const fixedAmt = action.amount !== undefined ? Number(this.evalExpr(action.amount, scope)) : undefined;
+          const list = action.target === 'hero_damage'
+            ? scope.round.heroDamageInstances
+            : scope.round.mobDamageInstances;
+
+          for (const inst of list) {
+            if (fixedAmt !== undefined) {
+              inst.amount = Math.max(action.min ?? 0, fixedAmt);
+            } else if (delta !== undefined) {
+              inst.amount = Math.max(action.min ?? 0, inst.amount + delta);
+            }
+            if (action.appliesArmor !== undefined) inst.appliesArmor = action.appliesArmor;
+            if (action.source !== undefined) inst.source = action.source;
+          }
+          break;
+        }
+
+        case 'change_health': {
+          const delta = Number(this.evalExpr(action.amount, scope)) || 0;
+          const target = action.target === 'hero' ? scope.hero : (scope.mob || scope.self);
+          target?.changeHealth(delta);
+          break;
+        }
+
+        case 'clear_mob_damage':
+        case 'clear_damage': {
+          if (!scope.round) break;
+          const target = (action as any).target || 'mob';
+          if (target === 'hero') {
+            scope.round.heroDamageInstances = [];
+          } else {
+            scope.round.mobDamageInstances = [];
+          }
+          break;
+        }
+
+        case 'prevent_death': {
+          if (scope.round) scope.round.preventDeath = true;
+          break;
+        }
+
+        case 'message': {
+          if (scope.round) {
+            scope.round.messages.push({
+              type: action.messageType,
+              text: String(this.evalExpr(action.text, scope)),
+            });
+          }
+          break;
+        }
+
+        case 'add_effect': {
+          if (scope.combat) {
+            const amt = action.amount ? Number(this.evalExpr(action.amount, scope)) : 1;
+            if (action.effect === 'poison') scope.combat.effects.push(new PoisonEffect(amt));
+            if (action.effect === 'vex') scope.combat.effects.push(new VexEffect());
+          }
+          break;
+        }
+
+        case 'inventory': {
+          if (!scope.hero) break;
+          if (action.slot) {
+            const equippedItem = scope.hero.equipped[action.slot];
+            if (equippedItem) {
+              scope.hero.removeEquipment(equippedItem);
+            }
+            break;
+          }
+
+          const rawItemId = typeof action.itemId === 'object' && action.itemId !== null
+            ? this.evalExpr(action.itemId, scope)
+            : action.itemId;
+          const itemId = String(rawItemId || '');
+          if (!itemId) break;
+
+          const count = action.count ? Number(this.evalExpr(action.count, scope)) : 1;
+          const isMat = action.isMaterial ?? TRACKED_MATERIALS.some(m => m.toLowerCase() === itemId.toLowerCase());
+
+          if (isMat) {
+            const matKey = TRACKED_MATERIALS.find(m => m.toLowerCase() === itemId.toLowerCase())!;
+            if (action.action === 'add' && scope.onGainMaterial) {
+              scope.onGainMaterial(matKey, count);
+            } else {
+              scope.hero.adjustMaterial(matKey, action.action === 'add' ? count : -count);
+            }
+          } else {
+            if (action.action === 'add') {
+              for (let i = 0; i < count; i++) scope.hero.addEquipment(itemId);
+            } else {
+              for (let i = 0; i < count; i++) scope.hero.removeEquipment(itemId);
+            }
+          }
+          break;
+        }
+
+        case 'flag': {
+          if (!scope.game) break;
+          const flags = scope.game.openWorld.questFlags;
+          if (action.action === 'set') {
+            flags[action.flag] = this.evalExpr(action.value!, scope);
+          } else if (action.action === 'add') {
+            const cur = Number(flags[action.flag]) || 0;
+            flags[action.flag] = cur + (Number(this.evalExpr(action.value!, scope)) || 0);
+          } else if (action.action === 'toggle') {
+            flags[action.flag] = !flags[action.flag];
+          } else if (action.action === 'delete') {
+            delete flags[action.flag];
+          }
+          break;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static resolvePath(scope: RuntimeScope, path: string): any {
+    const parts = path.split('.');
+    let root: any = scope;
+
+    if (parts[0] === 'flags' && scope.game) {
+      root = scope.game.openWorld.questFlags;
+      parts.shift();
+    }
+
+    for (const part of parts) {
+      if (root === null || root === undefined) return undefined;
+      root = root[part];
+    }
+    return root;
+  }
+
+  private static assignPath(scope: RuntimeScope, path: string, value: any): void {
+    const parts = path.split('.');
+    let root: any = scope;
+
+    if (parts[0] === 'flags' && scope.game) {
+      root = scope.game.openWorld.questFlags;
+      parts.shift();
+    }
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!root[parts[i]] || typeof root[parts[i]] !== 'object') {
+        root[parts[i]] = {};
+      }
+      root = root[parts[i]];
+    }
+    root[parts[parts.length - 1]] = value;
+  }
+
+  private static applyBinaryOp(op: BinaryOperator, left: any, right: any): any {
+    switch (op) {
+      case '==': return left === right;
+      case '!=': return left !== right;
+      case '>': return Number(left) > Number(right);
+      case '>=': return Number(left) >= Number(right);
+      case '<': return Number(left) < Number(right);
+      case '<=': return Number(left) <= Number(right);
+      case '+':
+        return typeof left === 'string' || typeof right === 'string'
+          ? `${left}${right}`
+          : Number(left) + Number(right);
+      case '-': return Number(left) - Number(right);
+      case '*': return Number(left) * Number(right);
+      case '/': return Number(right) === 0 ? 0 : Number(left) / Number(right);
+      case '%': return Number(left) % Number(right);
+      case 'and': return Boolean(left && right);
+      case 'or': return Boolean(left || right);
+    }
+  }
+}
+</file>
+
+<file path="src/engine/evaluator.ts">
+// src/engine/evaluator.ts
+import type { Character } from '../models/Character';
+import type { GameProgressionState } from '../types/game';
+import type { Expr, Action } from '../types/ast';
+import type { TrackedMaterial } from '../types/inventory';
+import { AstInterpreter, type RuntimeScope } from './astInterpreter';
+
+export interface EvaluationContext {
+  hero: Character;
+  game: GameProgressionState;
+  onGainMaterial?: (mat: TrackedMaterial, amount: number) => void;
+}
+
+export function evaluateCondition(
+  condition: Expr | undefined,
+  ctx: EvaluationContext
+): boolean {
+  if (!condition) return true;
+  const scope: RuntimeScope = {
+    hero: ctx.hero,
+    game: ctx.game,
+  };
+  return Boolean(AstInterpreter.evalExpr(condition, scope));
+}
+
+export function applyMutations(
+  mutations: Action[] | undefined,
+  ctx: EvaluationContext
+): void {
+  if (!mutations || mutations.length === 0) return;
+  const scope: RuntimeScope = {
+    hero: ctx.hero,
+    game: ctx.game,
+    onGainMaterial: ctx.onGainMaterial, // <-- Forward callback to interpreter
+  };
+  AstInterpreter.execute(mutations, scope);
+}
+</file>
+
+<file path="src/engine/travelResolvers.ts">
+import type { Character } from '../models/Character';
+import type { OpenWorldProgression } from '../types/game';
+import type { TravelRequest, TravelOutcome, TravelResolver, Region } from '../types/world';
+import { REGIONS } from '../data/regions';
+
+export class StandardTravelResolver implements TravelResolver {
+  public canTravel(
+    _hero: Character,
+    state: OpenWorldProgression,
+    req: TravelRequest,
+    regions: Record<string, Region> = REGIONS
+  ): { allowed: boolean; reason?: string } {
+    const fromRegion = regions[req.fromRegionId];
+    if (!fromRegion) return { allowed: false, reason: 'Unknown origin region.' };
+    const isAdjacent = fromRegion.adjacentRegionIds.includes(req.toRegionId);
+    const isDiscovered = state.discoveredRegions.includes(req.toRegionId);
+    
+    if (!isAdjacent && !isDiscovered) {
+      return { allowed: false, reason: 'Destination is not adjacent or discovered.' };
+    }
+    return { allowed: true };
+  }
+
+  public resolveTravel(
+    _hero: Character,
+    state: OpenWorldProgression,
+    req: TravelRequest,
+    regions: Record<string, Region> = REGIONS
+  ): TravelOutcome {
+    const targetRegion = regions[req.toRegionId];
+    if (!targetRegion) {
+      return { success: false, logMessages: ['Unknown destination region.'] };
+    }
+
+    const roll = Math.floor(Math.random() * 6) + 1;
+    const logs: string[] = [];
+
+    state.counters.travelSteps = (state.counters.travelSteps || 0) + 1;
+    state.counters.trekBonus = 0;
+
+    if (roll <= 2 && targetRegion.encounterTable?.length) {
+      const mobEntry = targetRegion.encounterTable[
+        Math.floor(Math.random() * targetRegion.encounterTable.length)
+      ];
+      logs.push(`Ambush on the road to ${targetRegion.name}! A ${mobEntry.mob} attacks!`);
+      return {
+        success: false,
+        combatMob: mobEntry.mob,
+        logMessages: logs,
+      };
+    }
+
+    logs.push(`Traveled safely to ${targetRegion.name}.`);
+    if (!state.discoveredRegions.includes(req.toRegionId)) {
+      state.discoveredRegions.push(req.toRegionId);
+      logs.push(`Discovered new region: ${targetRegion.name}!`);
+    }
+
+    state.currentRegionId = req.toRegionId;
+    state.currentPoiId = null;
+    state.currentNodeId = null;
+
+    return {
+      success: true,
+      logMessages: logs,
+    };
+  }
+}
+</file>
+
+<file path="src/types/ast.ts">
+import type { CombatLifecycleHooks } from './combat';
+
+// --- Expressions ---
+
+export type BinaryOperator =
+  | '==' | '!=' | '>' | '>=' | '<' | '<='
+  | '+' | '-' | '*' | '/' | '%'
+  | 'and' | 'or';
+
+export type UnaryOperator = 'not' | '-';
+
+export interface LiteralExpr {
+  type: 'literal';
+  value: string | number | boolean;
+}
+
+export interface GetExpr {
+  type: 'get';
+  path: string; // e.g., "round.matchingMisses", "mob.defense", "mob.state.fuse"
+}
+
+export interface BinaryExpr {
+  type: 'binary';
+  op: BinaryOperator;
+  left: Expr;
+  right: Expr;
+}
+
+export interface UnaryExpr {
+  type: 'unary';
+  op: UnaryOperator;
+  operand: Expr;
+}
+
+export interface DiceExpr {
+  type: 'dice';
+  count: number;
+  sides: number;
+}
+
+export interface HasItemExpr {
+  type: 'has_item';
+  itemId: string;
+}
+
+export interface TemplateExpr {
+  type: 'template';
+  template: string; // e.g. "Damage doubled to ${mob.damage}!"
+}
+
+export type Expr =
+  | LiteralExpr
+  | GetExpr
+  | BinaryExpr
+  | UnaryExpr
+  | DiceExpr
+  | HasItemExpr
+  | TemplateExpr;
+
+// --- Actions / Statements ---
+
+export interface IfAction {
+  type: 'if';
+  condition: Expr;
+  then: Action[];
+  else?: Action[];
+}
+
+export interface ForEachAction {
+  type: 'for_each';
+  list: Expr; // Expression resolving to an array (e.g. { type: 'get', path: 'round.missRolls' })
+  as: string; // Loop variable name injected into child scope
+  actions: Action[];
+}
+
+export interface SetAction {
+  type: 'set';
+  target: string; // e.g. "mob.defense", "combat.ignoreArmor", "mob.state.fuse"
+  value: Expr;
+}
+
+export interface ModifyAction {
+  type: 'modify';
+  target: string;
+  op: 'add' | 'multiply';
+  value: Expr;
+}
+
+export interface DealDamageAction {
+  type: 'deal_damage';
+  target: 'hero' | 'mob';
+  amount: Expr;
+  source: string;
+  appliesArmor?: boolean;
+}
+
+export interface ModifyDamageInstancesAction {
+  type: 'modify_damage_instances';
+  target: 'hero_damage' | 'mob_damage';
+  delta?: Expr;
+  amount?: Expr;
+  min?: number;
+  appliesArmor?: boolean;
+  source?: string;
+}
+
+export interface ChangeHealthAction {
+  type: 'change_health';
+  target: 'hero' | 'mob';
+  amount: Expr; // Negative for damage, positive for healing
+}
+
+export interface InventoryAction {
+  type: 'inventory';
+  action: 'add' | 'remove';
+  itemId?: string | Expr;
+  slot?: 'weapon' | 'armor' | 'pickaxe' | 'key';
+  count?: Expr;
+  isMaterial?: boolean;
+}
+
+export interface FlagAction {
+  type: 'flag';
+  flag: string;
+  action: 'set' | 'add' | 'toggle' | 'delete';
+  value?: Expr;
+}
+
+export interface MessageAction {
+  type: 'message';
+  messageType: 'hit' | 'miss' | 'special' | 'notice';
+  text: Expr;
+}
+
+export interface AddEffectAction {
+  type: 'add_effect';
+  effect: 'poison' | 'vex';
+  amount?: Expr;
+}
+
+export interface ClearDamageAction {
+  type: 'clear_damage' | 'clear_mob_damage';
+  target?: 'hero' | 'mob';
+}
+
+export interface ClearMobDamageAction {
+  type: 'clear_mob_damage';
+}
+
+export interface PreventDeathAction {
+  type: 'prevent_death';
+}
+
+export interface ReturnAction {
+  type: 'return';
+  key: string;
+  value: Expr;
+}
+
+export interface LootAction {
+  type: 'loot_action';
+  reward: Expr; // Macro: sets returnScope.reward and returnScope.won = true
+}
+
+export type Action =
+  | IfAction
+  | ForEachAction
+  | SetAction
+  | ModifyAction
+  | DealDamageAction
+  | ModifyDamageInstancesAction
+  | ChangeHealthAction
+  | InventoryAction
+  | FlagAction
+  | MessageAction
+  | AddEffectAction
+  | ClearDamageAction
+  | ClearMobDamageAction
+  | PreventDeathAction
+  | ReturnAction
+  | LootAction;
+
+// --- Mob & Hook Declarations ---
+
+export type CombatHookEvent = keyof CombatLifecycleHooks;
+
+export type CombatBehaviorAst = Partial<Record<CombatHookEvent, Action[]>>;
+</file>
+
+<file path="src/types/inventory.ts">
+import type { CombatLifecycleHooks } from './combat';
+
+export type TrackedMaterial = 
+  | 'Wood' 
+  | 'Stone' 
+  | 'Iron' 
+  | 'Coal' 
+  | 'Diamond' 
+  | 'Leather' 
+  | 'String' 
+  | 'Wheat' 
+  | 'Gunpowder' 
+  | 'Slimeball'
+  | 'Fish';
+
+export type EquipmentType = 'weapon' | 'armor' | 'pickaxe' | 'key';
+export type InventoryRule = 'total' | 'stack';
+
+export interface EquippedSlots {
+  weapon: string | null;
+  armor: string | null;
+  pickaxe: string | null;
+  key: string | null;
+}
+
+export interface EquipmentConfig {
+  name: string;
+  type: EquipmentType;
+  attack?: number;
+  damage?: number;
+  armorValue?: number;
+  diceBonus?: number;
+  description?: string;
+  hooks?: CombatLifecycleHooks;
+}
+
+export interface CraftingRecipe {
+  name: string;
+  type: EquipmentType;
+  cost: Partial<Record<TrackedMaterial, number>>;
+  desc: string;
+}
+</file>
+
+<file path="src/data/recipes.ts">
+import { Item } from '../models/Item';
+import type { EquipmentConfig, CraftingRecipe, TrackedMaterial } from '../types/inventory';
+import type { CombatContext } from '../types/combat';
+
+export const TRACKED_MATERIALS: TrackedMaterial[] = [
+  'Wood', 'Stone', 'Iron', 'Coal', 'Diamond',
+  'Leather', 'String', 'Wheat', 'Gunpowder', 'Slimeball', 'Fish'
+];
+
+export const EQUIPMENT_DEFINITIONS: EquipmentConfig[] = [
+  // Weapons
+  { name: 'Wooden Sword', type: 'weapon', attack: 1, damage: 2 },
+  { name: 'Stone Sword', type: 'weapon', attack: 2, damage: 2 },
+  { name: 'Iron Sword', type: 'weapon', attack: 3, damage: 6 },
+  { name: 'Diamond Sword', type: 'weapon', attack: 4, damage: 8 },
+  { name: 'Enchanted Iron Axe', type: 'weapon', attack: 4, damage: 6 },
+  {
+    name: 'Bow',
+    type: 'weapon',
+    attack: 2,
+    damage: 1,
+    description: 'Deals +2 bonus DMG on Turn 1',
+    hooks: {
+      onDealDamage: (ctx: CombatContext) => {
+        if (ctx.combatState.turn === 1 && ctx.roundState.hits > 0) {
+          ctx.roundState.heroDamageInstances.push({
+            amount: ctx.roundState.hits * 2,
+            source: 'Bow (First Strike)',
+            appliesArmor: false,
+          });
+          ctx.roundState.messages.push({
+            type: 'notice',
+            text: '🏹 Bow: First attack deals +2 bonus Damage per hit!',
+          });
+        }
+      },
+    },
+  },
+  { name: 'Crossbow', type: 'weapon', attack: 2, damage: 2 },
+  {
+    name: 'Trident',
+    type: 'weapon',
+    attack: 2,
+    damage: 3,
+    description: 'Single-die attack deals +1 bonus DMG',
+    hooks: {
+      onDealDamage: (ctx: CombatContext) => {
+        if (ctx.roundState.diceCount === 1 && ctx.roundState.hits > 0) {
+          ctx.roundState.heroDamageInstances.push({
+            amount: ctx.roundState.hits * 1,
+            source: 'Trident (Single Die Focus)',
+            appliesArmor: false,
+          });
+          ctx.roundState.messages.push({
+            type: 'notice',
+            text: '🔱 Trident: Single-die thrust deals +1 bonus Damage!',
+          });
+        }
+      },
+    },
+  },
+
+  // Armor
+  { name: 'Leather Armor', type: 'armor', armorValue: 1 },
+  { name: 'Iron Armor', type: 'armor', armorValue: 2 },
+  { name: 'Diamond Armor', type: 'armor', armorValue: 4 },
+
+  // Pickaxes
+  { name: 'Wooden Pickaxe', type: 'pickaxe', diceBonus: 1, description: 'Rolls 1 die on Mining Table' },
+  { name: 'Stone Pickaxe', type: 'pickaxe', diceBonus: 2, description: 'Rolls 2 dice, pick one' },
+  { name: 'Iron Pickaxe', type: 'pickaxe', diceBonus: 3, description: 'Rolls 3 dice, pick one' },
+  { name: 'Diamond Pickaxe', type: 'pickaxe', diceBonus: 4, description: 'Rolls 4 dice, pick one; can mine Obsidian' },
+
+  // Key Items
+  {
+    name: 'Totem of Undying',
+    type: 'key',
+    description: 'Heals 20 HP upon fatal defeat',
+    hooks: {
+      onDeath: (ctx: CombatContext) => {
+        if (ctx.roundState.dyingEntity === ctx.combatState.hero) {
+          ctx.combatState.hero.resetHealth();
+          ctx.roundState.preventDeath = true;
+          ctx.combatState.hero.removeEquipment('Totem of Undying');
+          ctx.roundState.messages.push({
+            type: 'special',
+            text: '✨ TOTEM USED! The Totem of Undying shattered, restoring you to full 20 HP!',
+          });
+        }
+      },
+    },
+  },
+  { name: 'Torch', type: 'key', description: 'Explore dark mines and caves' },
+  { name: 'Bucket', type: 'key', description: 'Turns lava pools into solid stone' },
+  { name: 'Boat', type: 'key', description: 'Traverse rivers and oceans safely' },
+  { name: 'TNT', type: 'key', description: 'Excavate sealed pathways' },
+  { name: 'Compass', type: 'key', description: '+1 Die on Wilderness Exploration' },
+  { name: 'World Map', type: 'key', description: '+1 Die on Wilderness Exploration' },
+];
+
+export const EQUIPMENT_CATALOG: Record<string, Item> = Object.fromEntries(
+  EQUIPMENT_DEFINITIONS.map((def) => [def.name, new Item(def)])
+);
+
+export function getEquipmentItem(name: string): Item | undefined {
+  return EQUIPMENT_CATALOG[name];
+}
+
+export const CRAFTING_RECIPES: CraftingRecipe[] = [
+  { name: 'Wooden Sword', type: 'weapon', cost: { Wood: 1 }, desc: '1 ATK | 2 DMG' },
+  { name: 'Stone Sword', type: 'weapon', cost: { Wood: 1, Stone: 2 }, desc: '2 ATK | 2 DMG' },
+  { name: 'Iron Sword', type: 'weapon', cost: { Wood: 1, Iron: 2 }, desc: '3 ATK | 6 DMG' },
+  { name: 'Diamond Sword', type: 'weapon', cost: { Wood: 1, Diamond: 2 }, desc: '4 ATK | 8 DMG' },
+  { name: 'Bow', type: 'weapon', cost: { Wood: 1, String: 3 }, desc: '2 ATK | 1 DMG (3 DMG Turn 1)' },
+  { name: 'Crossbow', type: 'weapon', cost: { Wood: 1, Iron: 1, String: 1 }, desc: '2 ATK | 2 DMG' },
+  { name: 'Leather Armor', type: 'armor', cost: { Leather: 4 }, desc: '1 ARM (Flat absorption)' },
+  { name: 'Iron Armor', type: 'armor', cost: { Iron: 4 }, desc: '2 ARM (Flat absorption)' },
+  { name: 'Diamond Armor', type: 'armor', cost: { Diamond: 4 }, desc: '4 ARM (Flat absorption)' },
+  { name: 'Stone Pickaxe', type: 'pickaxe', cost: { Wood: 1, Stone: 2 }, desc: 'Roll 2 dice on Mining Table' },
+  { name: 'Iron Pickaxe', type: 'pickaxe', cost: { Wood: 1, Iron: 2 }, desc: 'Roll 3 dice on Mining Table' },
+  { name: 'Diamond Pickaxe', type: 'pickaxe', cost: { Wood: 1, Diamond: 2 }, desc: 'Roll 4 dice & mine Obsidian' },
+  { name: 'Torch', type: 'key', cost: { Wood: 1, Coal: 1 }, desc: 'Explore dark mine shafts' },
+  { name: 'Bucket', type: 'key', cost: { Iron: 3 }, desc: 'Cool hazardous lava pools' },
+  { name: 'Boat', type: 'key', cost: { Wood: 5 }, desc: 'Navigate open waters' },
+  { name: 'TNT', type: 'key', cost: { Gunpowder: 3 }, desc: 'Blast away sealed obstacles' },
+  { name: 'Compass', type: 'key', cost: { Iron: 4, Coal: 1 }, desc: '+1 Wilderness Exploration Die' },
+  { name: 'World Map', type: 'key', cost: { Leather: 2, Wood: 2 }, desc: '+1 Wilderness Exploration Die' },
+];
+</file>
+
+<file path="src/types/combat.ts">
+import type { Entity } from '../models/Entity';
+import type { Character } from '../models/Character';
+import type { Mob } from '../models/Mob';
+
+export interface DamageInstance {
+  amount: number;
+  source: string;
+  appliesArmor: boolean;
+}
+
+export interface DamageResult {
+  appliedTotal: number;
+  details: string[];
+}
+
+export interface CombatMessage {
+  type: 'hit' | 'miss' | 'special' | 'notice';
+  text: string;
+}
+
+export interface RoundState {
+  diceCount: number;
+  rolls: number[];
+  hits: number;
+  misses: number;
+  missRolls: number[];
+  matchingHits: number;
+  matchingMisses: number;
+  heroDamageInstances: DamageInstance[];
+  mobDamageInstances: DamageInstance[];
+  messages: CombatMessage[];
+  preventDeath: boolean;
+  dyingEntity: Entity | null;
+  vexBanishedThisRound?: boolean;
+  pendingCritHitPick?: boolean; // True when quadruples occur on hits
+}
+
+export interface CombatState {
+  turn: number;
+  effects: CombatLifecycleHooks[];
+  hero: Character;
+  mob: Mob;
+  ignoreArmor: boolean;
+  heroDmgPenalty: number;
+  heroDmgMultiplier?: number;
+  friendlyMobJoined?: boolean;
+  guaranteedLootRoll?: number;
+  pendingDiamondReward?: number;
+}
+
+export interface CombatContext {
+  combatState: CombatState;
+  roundState: RoundState;
+}
+
+export type CombatHook = (ctx: CombatContext) => void;
+
+export interface CombatLifecycleHooks {
+  onCombatStart?: CombatHook;
+  onRoundStart?: CombatHook;
+  onRollEvaluated?: CombatHook;
+  onDealDamage?: CombatHook;
+  onReceiveDamage?: CombatHook;
+  onRoundEnd?: CombatHook;
+  onDeath?: CombatHook;
+  onCombatEnd?: CombatHook;
+}
+</file>
+
+<file path="src/types/game.ts">
+import type { CharacterConfig } from '../models/Character';
+
+export type GameModeId = 'sandbox' | 'narrative' | 'open_world';
+
+export type ActiveView = 
+  | 'narrative' 
+  | 'combat' 
+  | 'forest' 
+  | 'mining' 
+  | 'crafting'
+  | 'world_map'
+  | 'poi_node';
+
+export interface SandboxProgression {
+  forestCleared: number;
+  mineCleared: number;
+}
+
+export interface NarrativeProgression {
+  currentPassageId: string;
+  visitedPassages: string[];
+}
+
+export interface OpenWorldProgression {
+  currentRegionId: string;
+  currentPoiId: string | null;
+  currentNodeId: string | null;
+  discoveredRegions: string[];
+  discoveredPoiIds: string[];
+  questFlags: Record<string, boolean | number | string>;
+  counters: Record<string, number>;
+  customData: Record<string, any>;
+}
+
+export interface GameProgressionState {
+  mode: GameModeId;
+  activeView: ActiveView;
+  sandbox: SandboxProgression;
+  narrative: NarrativeProgression;
+  openWorld: OpenWorldProgression;
+}
+
+export interface GameSaveData {
+  version: number;
+  character: CharacterConfig;
+  game: GameProgressionState;
+}
+</file>
+
+<file path="src/data/bestiary.ts">
+import type { MobConfig } from '../models/Mob';
+
+export const BESTIARY: MobConfig[] = [
+  {
+    id: 'zombie',
+    name: 'Zombie',
+    maxHearts: 10,
+    damage: 3,
+    defense: 4,
+    rulesText: 'Bite: Rolling 2+ misses causes the zombie to bite you, dealing a 2nd hit (+1 Mob Hit).',
+    lootText: 'Roll d6: On a 6, gain 1 Iron.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Iron', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 Iron' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            {
+              type: 'deal_damage',
+              target: 'hero',
+              amount: { type: 'get', path: 'mob.damage' },
+              source: 'Zombie Bite (Extra Hit)',
+              appliesArmor: true,
+            },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Zombie bite lands an extra attack!' },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'zombie_villager',
+    name: 'Zombie Villager',
+    maxHearts: 10,
+    damage: 3,
+    defense: 5,
+    rulesText: 'Armored: Rolling 2+ misses causes the Zombie Villager to equip armor, reducing incoming damage by 1.',
+    lootText: 'None.',
+    loot: [
+      { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'unary',
+              op: 'not',
+              operand: { type: 'get', path: 'mob.state.villagerArmor' },
+            },
+          },
+          then: [
+            { type: 'set', target: 'mob.state.villagerArmor', value: { type: 'literal', value: true } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Zombie Villager equips armor!' },
+            },
+          ],
+        },
+      ],
+      onReceiveDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.villagerArmor' },
+          then: [
+            {
+              type: 'modify_damage_instances',
+              target: 'hero_damage',
+              delta: { type: 'literal', value: -1 },
+              min: 0,
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'skeleton',
+    name: 'Skeleton',
+    maxHearts: 8,
+    damage: 2,
+    defense: 4,
+    rulesText: 'Retreat: Rolling 2+ misses causes the skeleton to reposition, permanently raising its Defense to 5.',
+    lootText: 'Roll d6: On a 6, gain a Bow (2 Attack, 1 Damage; 3 Damage on 1st attack).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Bow' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Bow' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'binary',
+              op: '<',
+              left: { type: 'get', path: 'mob.defense' },
+              right: { type: 'literal', value: 5 },
+            },
+          },
+          then: [
+            { type: 'set', target: 'mob.defense', value: { type: 'literal', value: 5 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Skeleton retreats! Defense is permanently raised to 5!' },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'spider',
+    name: 'Spider',
+    maxHearts: 8,
+    damage: 2,
+    defense: 4,
+    rulesText: 'Webs: Rolling 2+ misses traps you in webs, causing spider attacks to completely ignore your Armor.',
+    lootText: 'Roll d6: On a 5 or 6, gain 1 String.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'String', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 String' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'unary',
+              op: 'not',
+              operand: { type: 'get', path: 'combat.ignoreArmor' },
+            },
+          },
+          then: [
+            { type: 'set', target: 'combat.ignoreArmor', value: { type: 'literal', value: true } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Caught in webs! Attacks ignore Armor for the rest of battle!' },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'cave_spider',
+    name: 'Cave Spider',
+    maxHearts: 8,
+    damage: 2,
+    defense: 4,
+    rulesText: 'Poison Bite: Rolling 2+ misses poisons you, dealing 1 unblockable damage every turn until battle ends.',
+    lootText: 'Roll d6: On a 5 or 6, gain 1 String.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'String', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 String' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'unary',
+              op: 'not',
+              operand: { type: 'has_item', itemId: 'PoisonImmune' },
+            },
+          },
+          then: [
+            { type: 'add_effect', effect: 'poison', amount: { type: 'literal', value: 1 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '⚡ Poison bite! You are poisoned for 1 damage every turn!' },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'slime',
+    name: 'Slime',
+    maxHearts: 16,
+    damage: 2,
+    defense: 4,
+    rulesText: 'Divide: Rolling 2+ misses causes the slime to split, doubling its current damage value.',
+    lootText: 'Roll d6: On 3 or higher, gain 1 Slimeball.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 3 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Slimeball', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 Slimeball' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'modify', target: 'mob.damage', op: 'multiply', value: { type: 'literal', value: 2 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: {
+                type: 'template',
+                template: '⚡ The slime splits! Damage doubled to ${mob.damage}!',
+              },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'creeper',
+    name: 'Creeper',
+    maxHearts: 10,
+    damage: 0,
+    defense: 3,
+    rulesText: 'Fuse: Explodes for 20 DMG on Turn 8.\nHiss: Rolling 2+ misses hisses. Triggering a 2nd hiss causes an instant 20-damage explosion!',
+    lootText: 'If defeated without exploding, roll d6: On 6, gain 2 Gunpowder.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Gunpowder', count: { type: 'literal', value: 2 }, isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '2 Gunpowder' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onCombatStart: [
+        { type: 'set', target: 'mob.state.fuse', value: { type: 'literal', value: 0 } },
+        { type: 'set', target: 'mob.state.hissCount', value: { type: 'literal', value: 0 } },
+      ],
+      onRoundStart: [
+        { type: 'modify', target: 'mob.state.fuse', op: 'add', value: { type: 'literal', value: 1 } },
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'mob.state.fuse' },
+            right: { type: 'literal', value: 8 },
+          },
+          then: [
+            { type: 'change_health', target: 'hero', amount: { type: 'literal', value: -20 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '💥 KABOOM! Fuse reached 8! Creeper detonated for 20 Damage!' },
+            },
+          ],
+        },
+      ],
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'modify', target: 'mob.state.hissCount', op: 'add', value: { type: 'literal', value: 1 } },
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '>=',
+                left: { type: 'get', path: 'mob.state.hissCount' },
+                right: { type: 'literal', value: 2 },
+              },
+              then: [
+                { type: 'change_health', target: 'hero', amount: { type: 'literal', value: -20 } },
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '💥 KABOOM! Creeper hissed twice and detonated instantly for 20 Damage!' },
+                },
+              ],
+              else: [
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '⚡ Creeper hisses loudly! A 2nd hiss causes an instant explosion!' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'pillager',
+    name: 'Pillager',
+    maxHearts: 6,
+    damage: 2,
+    defense: 3,
+    rulesText: 'Zero In: Rolling 2+ misses causes the pillager to dial in its crossbow, dealing 4 damage next turn.',
+    lootText: 'Roll d6: On a 6, gain a Crossbow (2 Attack, 2 Damage).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Crossbow' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Crossbow' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'set', target: 'mob.state.nextTurnDmg', value: { type: 'literal', value: 4 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: "⚡ Pillager zeroes in! Next turn's damage will be 4!" },
+            },
+          ],
+        },
+      ],
+      onDealDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.nextTurnDmg' },
+          then: [
+            {
+              type: 'modify_damage_instances',
+              target: 'mob_damage',
+              amount: { type: 'get', path: 'mob.state.nextTurnDmg' },
+              source: 'Pillager Zeroed-In Crossbow',
+            },
+          ],
+        },
+      ],
+      onRoundEnd: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.nextTurnDmg' },
+          then: [
+            { type: 'set', target: 'mob.state.nextTurnDmg', value: { type: 'literal', value: 0 } },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'vindicator',
+    name: 'Vindicator',
+    maxHearts: 14,
+    damage: 6,
+    defense: 4,
+    rulesText: 'Cleave: Rolling 2+ misses shatters your armor, completely destroying it (Armor set to 0).',
+    lootText: 'Roll d6: On 5 or 6, gain an Enchanted Iron Axe (4 Attack, 6 Damage).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Enchanted Iron Axe' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Enchanted Iron Axe' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>=',
+              left: { type: 'get', path: 'round.matchingMisses' },
+              right: { type: 'literal', value: 2 },
+            },
+            right: {
+              type: 'binary',
+              op: '>',
+              left: { type: 'get', path: 'hero.armor' },
+              right: { type: 'literal', value: 0 },
+            },
+          },
+          then: [
+            { type: 'inventory', action: 'remove', slot: 'armor' },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: {
+                type: 'literal',
+                value: '⚡ Vindicator cleaves through your armor, completely destroying it (Armor = 0)!',
+              },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'drowned',
+    name: 'Drowned',
+    maxHearts: 30,
+    damage: 6,
+    defense: 4,
+    rulesText: 'Underwater Drag: Rolling 2+ misses slows your swings, subtracting 1 from your attack Damage for this fight.',
+    lootText: 'Roll d6: On a 6, gain a Trident (2 Attack, 3 Damage; 4 Damage on 1 die).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '==',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 6 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Trident' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Trident' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'modify', target: 'combat.heroDmgPenalty', op: 'add', value: { type: 'literal', value: 1 } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: {
+                type: 'template',
+                template: '⚡ Underwater drag slows your blows (-1 Damage, Total penalty: -${combat.heroDmgPenalty})!',
+              },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'witch',
+    name: 'Witch',
+    maxHearts: 13,
+    damage: 3,
+    defense: 5,
+    rulesText: 'Splash Potions: Rolling 2+ misses rolls on Witch Potion Table (1=Fumble, 2-3=6 DMG, 4=-1 Hero DMG, 5=Poison 1/turn, 6=Heals 4 HP).',
+    lootText: 'Roll d6: On 5 or 6, gain 1 Healing Potion.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'change_health', target: 'hero', amount: { type: 'literal', value: 4 } },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Healing Potion (+4 HP)' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            {
+              type: 'set',
+              target: 'mob.state.potionRoll',
+              value: { type: 'dice', count: 1, sides: 6 },
+            },
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '==',
+                left: { type: 'get', path: 'mob.state.potionRoll' },
+                right: { type: 'literal', value: 1 },
+              },
+              then: [
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '⚡ Witch throws a splash potion (d6 = 1): Fumble! No effect.' },
+                },
+              ],
+              else: [
+                {
+                  type: 'if',
+                  condition: {
+                    type: 'binary',
+                    op: '<=',
+                    left: { type: 'get', path: 'mob.state.potionRoll' },
+                    right: { type: 'literal', value: 3 },
+                  },
+                  then: [
+                    { type: 'change_health', target: 'hero', amount: { type: 'literal', value: -6 } },
+                    {
+                      type: 'message',
+                      messageType: 'special',
+                      text: {
+                        type: 'template',
+                        template: '⚡ Witch throws a splash potion (d6 = ${mob.state.potionRoll}): Potion of Harming deals 6 Damage!',
+                      },
+                    },
+                  ],
+                  else: [
+                    {
+                      type: 'if',
+                      condition: {
+                        type: 'binary',
+                        op: '==',
+                        left: { type: 'get', path: 'mob.state.potionRoll' },
+                        right: { type: 'literal', value: 4 },
+                      },
+                      then: [
+                        { type: 'modify', target: 'combat.heroDmgPenalty', op: 'add', value: { type: 'literal', value: 1 } },
+                        {
+                          type: 'message',
+                          messageType: 'special',
+                          text: {
+                            type: 'literal',
+                            value: '⚡ Witch throws a splash potion (d6 = 4): Potion of Weakness reduces hero damage by 1!',
+                          },
+                        },
+                      ],
+                      else: [
+                        {
+                          type: 'if',
+                          condition: {
+                            type: 'binary',
+                            op: '==',
+                            left: { type: 'get', path: 'mob.state.potionRoll' },
+                            right: { type: 'literal', value: 5 },
+                          },
+                          then: [
+                            { type: 'add_effect', effect: 'poison', amount: { type: 'literal', value: 1 } },
+                            {
+                              type: 'message',
+                              messageType: 'special',
+                              text: {
+                                type: 'literal',
+                                value: '⚡ Witch throws a splash potion (d6 = 5): Potion of Poison! 1 damage every turn!',
+                              },
+                            },
+                          ],
+                          else: [
+                            { type: 'change_health', target: 'mob', amount: { type: 'literal', value: 4 } },
+                            {
+                              type: 'message',
+                              messageType: 'special',
+                              text: {
+                                type: 'literal',
+                                value: '⚡ Witch throws a splash potion (d6 = 6): Potion of Healing! Witch regains 4 Hearts!',
+                              },
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'evoker',
+    name: 'Evoker',
+    maxHearts: 24,
+    damage: 0,
+    defense: 4,
+    rulesText: 'Spellcasting: Hits taken depend on miss dice:\n• Odd Miss Die: Evoker Fang (1d6 DMG).\n• Even Miss Die: Vex (1d6 DMG + adds +1 DMG to all future hits).\n• Doubles on Hits banishes 1 Vex.\n• Miss Doubles: Lightning helmet strike deals 1d6 bonus DMG!',
+    lootText: 'Roll d6: On 5 or 6, gain an Undamaged Totem of Undying (prevents fatal defeat and fully heals 20 HP).',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Totem of Undying' },
+          { type: 'loot_action', reward: { type: 'literal', value: 'Totem of Undying' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            {
+              type: 'set',
+              target: 'mob.state.lightningDmg',
+              value: { type: 'dice', count: 1, sides: 6 },
+            },
+            {
+              type: 'change_health',
+              target: 'hero',
+              amount: {
+                type: 'unary',
+                op: '-',
+                operand: { type: 'get', path: 'mob.state.lightningDmg' },
+              },
+            },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: {
+                type: 'template',
+                template: '⚡ Lightning helmet strike! Took ${mob.state.lightningDmg} unblockable lightning damage!',
+              },
+            },
+          ],
+        },
+      ],
+      onDealDamage: [
+        { type: 'clear_mob_damage' },
+        {
+          type: 'for_each',
+          list: { type: 'get', path: 'round.missRolls' },
+          as: 'die',
+          actions: [
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '==',
+                left: {
+                  type: 'binary',
+                  op: '%',
+                  left: { type: 'get', path: 'die' },
+                  right: { type: 'literal', value: 2 },
+                },
+                right: { type: 'literal', value: 1 },
+              },
+              then: [
+                {
+                  type: 'deal_damage',
+                  target: 'hero',
+                  amount: { type: 'dice', count: 1, sides: 6 },
+                  source: 'Evoker Fang',
+                  appliesArmor: true,
+                },
+              ],
+              else: [
+                { type: 'add_effect', effect: 'vex' },
+                {
+                  type: 'deal_damage',
+                  target: 'hero',
+                  amount: { type: 'dice', count: 1, sides: 6 },
+                  source: 'Summoned Vex Strike',
+                  appliesArmor: true,
+                },
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '👻 Evoker summoned a Vex! (+1 ongoing DMG to all future hits)' },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            {
+              type: 'set',
+              target: 'mob.state.bonusSpellDie',
+              value: { type: 'dice', count: 1, sides: 6 },
+            },
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '==',
+                left: {
+                  type: 'binary',
+                  op: '%',
+                  left: { type: 'get', path: 'mob.state.bonusSpellDie' },
+                  right: { type: 'literal', value: 2 },
+                },
+                right: { type: 'literal', value: 1 },
+              },
+              then: [
+                {
+                  type: 'deal_damage',
+                  target: 'hero',
+                  amount: { type: 'dice', count: 1, sides: 6 },
+                  source: 'Evoker Fang (Bonus Miss Strike)',
+                  appliesArmor: true,
+                },
+              ],
+              else: [
+                { type: 'add_effect', effect: 'vex' },
+                {
+                  type: 'deal_damage',
+                  target: 'hero',
+                  amount: { type: 'dice', count: 1, sides: 6 },
+                  source: 'Summoned Vex Strike (Bonus Miss Strike)',
+                  appliesArmor: true,
+                },
+                {
+                  type: 'message',
+                  messageType: 'special',
+                  text: { type: 'literal', value: '👻 Evoker summoned a Vex! (+1 ongoing DMG to all future hits)' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'guardian',
+    name: 'Guardian',
+    maxHearts: 15,
+    damage: 4,
+    defense: 4,
+    rulesText: 'Closing Distance: At the start of battle, you must close the distance. Your hits deal 0 DMG until you roll at least 1 hit.',
+    lootText: 'Roll d6: On 5 or 6, gain 1 Fish.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Fish', isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '1 Fish' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onCombatStart: [
+        { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: true } },
+        { type: 'set', target: 'mob.state.closingThisRound', value: { type: 'literal', value: true } },
+        {
+          type: 'message',
+          messageType: 'notice',
+          text: { type: 'literal', value: '  Guardian is far away! Roll at least 1 hit to close the distance!' },
+        },
+      ],
+      onRoundStart: [
+        {
+          type: 'set',
+          target: 'mob.state.closingThisRound',
+          value: { type: 'get', path: 'mob.state.isClosingDistance' },
+        },
+      ],
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: 'and',
+            left: {
+              type: 'binary',
+              op: '>',
+              left: { type: 'get', path: 'round.hits' },
+              right: { type: 'literal', value: 0 },
+            },
+            right: { type: 'get', path: 'mob.state.isClosingDistance' },
+          },
+          then: [
+            { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: false } },
+            {
+              type: 'message',
+              messageType: 'notice',
+              text: { type: 'literal', value: '  You swam close! Distance overcome for next turn.' },
+            },
+          ],
+        },
+      ],
+      onReceiveDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.closingThisRound' },
+          then: [
+            { type: 'clear_damage', target: 'hero' },
+            {
+              type: 'message',
+              messageType: 'notice',
+              text: { type: 'literal', value: '  Closing Distance: Hero attacks deal 0 DMG this turn!' },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'elder_guardian',
+    name: 'Elder Guardian',
+    maxHearts: 30,
+    damage: 6,
+    defense: 3,
+    rulesText: 'Closing Distance: At the start of battle (and when it swims away), you must close the distance. Your hits deal 0 DMG and Elder Guardian attacks ignore Armor until you roll at least 1 hit.\nSwim Away: Rolling 2+ misses causes the Elder Guardian to swim away, forcing you to close distance again next round.',
+    lootText: 'Roll d6: On 5 or 6, gain 3 Fish.',
+    loot: [
+      {
+        type: 'if',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'roll' },
+          right: { type: 'literal', value: 5 },
+        },
+        then: [
+          { type: 'inventory', action: 'add', itemId: 'Fish', count: { type: 'literal', value: 3 }, isMaterial: true },
+          { type: 'loot_action', reward: { type: 'literal', value: '3 Fish' } },
+        ],
+        else: [
+          { type: 'loot_action', reward: { type: 'literal', value: 'No loot' } },
+        ],
+      },
+    ],
+    behavior: {
+      onCombatStart: [
+        { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: true } },
+        { type: 'set', target: 'mob.state.swamAway', value: { type: 'literal', value: false } },
+        { type: 'set', target: 'mob.state.closingThisRound', value: { type: 'literal', value: true } },
+        {
+          type: 'message',
+          messageType: 'notice',
+          text: { type: 'literal', value: '  Elder Guardian is far away! Roll at least 1 hit to close the distance!' },
+        },
+      ],
+      onRoundStart: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.swamAway' },
+          then: [
+            { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: true } },
+            { type: 'set', target: 'mob.state.swamAway', value: { type: 'literal', value: false } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '  Elder Guardian swam into the deep! You must close the distance again!' },
+            },
+          ],
+        },
+        {
+          type: 'set',
+          target: 'mob.state.closingThisRound',
+          value: { type: 'get', path: 'mob.state.isClosingDistance' },
+        },
+      ],
+      onRollEvaluated: [
+        {
+          type: 'if',
+          condition: {
+            type: 'binary',
+            op: '>=',
+            left: { type: 'get', path: 'round.matchingMisses' },
+            right: { type: 'literal', value: 2 },
+          },
+          then: [
+            { type: 'set', target: 'mob.state.swamAway', value: { type: 'literal', value: true } },
+            {
+              type: 'message',
+              messageType: 'special',
+              text: { type: 'literal', value: '  Double misses! Elder Guardian swims away (distance resets next turn)!' },
+            },
+          ],
+        },
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.closingThisRound' },
+          then: [
+            {
+              type: 'if',
+              condition: {
+                type: 'binary',
+                op: '>',
+                left: { type: 'get', path: 'round.hits' },
+                right: { type: 'literal', value: 0 },
+              },
+              then: [
+                { type: 'set', target: 'mob.state.isClosingDistance', value: { type: 'literal', value: false } },
+                {
+                  type: 'message',
+                  messageType: 'notice',
+                  text: { type: 'literal', value: '  You swam close! Distance overcome for subsequent attacks.' },
+                },
+              ],
+              else: [
+                {
+                  type: 'message',
+                  messageType: 'notice',
+                  text: { type: 'literal', value: '  Failed to close distance! Elder Guardian remains out of reach.' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      onDealDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.closingThisRound' },
+          then: [
+            {
+              type: 'modify_damage_instances',
+              target: 'mob_damage',
+              appliesArmor: false,
+              source: 'Elder Guardian Unblockable Beam',
+            },
+          ],
+        },
+      ],
+      onReceiveDamage: [
+        {
+          type: 'if',
+          condition: { type: 'get', path: 'mob.state.closingThisRound' },
+          then: [
+            { type: 'clear_damage', target: 'hero' },
+            {
+              type: 'message',
+              messageType: 'notice',
+              text: { type: 'literal', value: '  Closing Distance: Hero attacks deal 0 DMG this turn!' },
+            },
+          ],
+        },
+      ],
+    },
+  },
+];
+</file>
+
+<file path="src/data/icons.ts">
+export const ICONS: Record<string, string> = {
+  hero: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="7" height="7" fill="#000"/><rect x="1" y="1" width="5" height="2" fill="#4a3219"/><rect x="1" y="3" width="5" height="3" fill="#d39c7e"/><rect x="1" y="3" width="2" height="1" fill="#fff"/><rect x="2" y="3" width="1" height="1" fill="#283593"/><rect x="4" y="3" width="2" height="1" fill="#fff"/><rect x="4" y="3" width="1" height="1" fill="#283593"/></svg>`,
+  heartFull: `<svg class="pixel-icon" viewBox="0 0 8 8"><path d="M 1,0 H 3 V 1 H 4 V 1 0 H 6 V 1 H 7 V 4 H 6 V 5 H 5 V 6 H 4 V 7 H 3 V 6 H 2 V 5 H 1 V 4 H 0 V 1 h 1 z"/><path d="M 1,1 V 4 H 2 V 5 H 3 V 6 H 4 V 5 H 5 V 4 H 6 V 1 H 4 V 2 H 3 V 1 Z" style="fill:#e41b1b"/></svg>`,
+  heartEmpty: `<svg class="pixel-icon" viewBox="0 0 8 8"><path d="M 1,0 V 1 H 3 V 0 Z M 3,1 V 2 H 4 V 1 Z M 4,1 H 6 V 0 H 4 Z M 6,1 V 4 H 7 V 1 Z M 6,4 H 5 V 5 H 6 Z M 5,5 H 4 V 6 H 5 Z M 4,6 H 3 V 7 H 4 Z M 3,6 V 5 H 2 V 6 Z M 2,5 V 4 H 1 V 5 Z M 1,4 V 1 H 0 v 3 z"/></svg>`,
+  sword: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000000" d="M 0,3 H 3 V 2 H 4 V 1 H 5 V 0 H 8 V 3 H 7 V 4 H 6 V 5 H 5 V 8 H 3 V 7 H 2 V 8 H 0 V 6 H 1 V 5 H 0 Z" /><rect style="fill:#6e4e2e" width="1" height="1" x="1" y="6" /><path style="fill:#d6d8d9" d="M 5,1 V 3 H 7 V 1 Z M 5,3 H 4 V 4 H 5 Z M 2,5 V 6 H 3 V 5 Z" /><path style="fill:#a9afb2" d="M 4 2 L 4 3 L 5 3 L 5 2 L 4 2 z M 5 3 L 5 4 L 6 4 L 6 3 L 5 3 z M 1 4 L 1 5 L 2 5 L 2 4 L 1 4 z M 3 4 L 3 5 L 4 5 L 4 4 L 3 4 z M 3 6 L 3 7 L 4 7 L 4 6 L 3 6 z " /><path style="fill:#4a4d4f" d="M 2 4 L 2 5 L 3 5 L 3 4 L 2 4 z M 3 5 L 3 6 L 4 6 L 4 5 L 3 5 z " /><path style="fill:#858a8b" d="M 3 3 L 3 4 L 4 4 L 4 3 L 3 3 z M 4 4 L 4 5 L 5 5 L 5 4 L 4 4 z " /></svg>`,
+  tnt: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="7" height="7" fill="#000"/><rect x="1" y="1" width="5" height="5" fill="#d32f2f"/><rect x="1" y="2" width="5" height="3" fill="#f5f5f5"/><rect x="3" y="0" width="1" height="1" fill="#aaa"/></svg>`,
+  chestplate: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000000" d="M 0,0 V 4 H 1 V 7 H 2 V 8 H 5.9999999 V 7 h 1 V 4 h 1 V 0 h -3 V 1 H 3 V 0 Z" /><rect style="fill:#858a8b" width="4" height="1" x="2" y="6" /><path style="fill:#d6d8d9" d="M 1,1 V 3 H 2 V 5 H 6 V 3 H 7 V 1 H 5 V 2 H 3 V 1 Z" /><path style="fill:#a9afb2" d="M 2,5 V 6 H 3 V 7 H 5 V 6 H 6 V 5 Z M 2,3 H 3 V 4 H 2 Z M 5,3 H 6 V 4 H 5 Z M 5,1 H 6 V 2 H 5 Z M 2,1 H 3 V 2 H 2 Z" /><rect style="fill:#f9fdfe" width="2" height="1" x="3" y="4" /></svg>`,
+  pickaxe: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000000" d="M 1,1 V 3 H 3 V 4 H 2 V 5 H 1 V 6 H 0 V 8 H 2 V 7 H 3 V 6 H 4 V 5 H 5 V 7 H 7 V 6 H 8 V 2 H 7 V 1 H 6 V 0 H 2 v 1 z" /><path style="fill:#4a4c50" d="M 4,2 H 6 V 4 H 4 Z" /><path style="fill:#8b6328" d="M 4,3 H 5 V 4 H 4 Z M 1,6 H 2 V 7 H 1 Z M 2,5 H 3 V 6 H 2 Z M 3,4 H 4 V 5 H 3 Z" /><path style="fill:#a8afb1" d="M 2 1 L 2 2 L 5 2 L 5 3 L 6 3 L 6 6 L 7 6 L 7 2 L 6 2 L 6 1 L 2 1 z " /><path style="fill:#d5d9d9" d="M 6,3 H 7 V 5 H 6 Z M 5,2 H 6 V 3 H 5 Z M 3,1 H 5 V 2 H 3 Z" /></svg>`,
+  bed: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000" d="M 0,1 V 6 H 3 V 5 H 4 V 6 H 7 V 1 Z"/><rect x="1" y="2" width="1" height="1" fill="#fff"/><rect x="2" y="2" width="4" height="1" fill="#d32f2f"/><rect x="1" y="3" width="5" height="1" fill="#5d4037"/><rect x="1" y="4" width="1" height="1" fill="#3e2723"/><rect x="5" y="4" width="1" height="1" fill="#3e2723"/></svg>`,
+  target: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="3" y="3" width="1" height="1" fill="#d32f2f"/><path d="M 2,0 V 1 H 3 V 2 H 4 V 1 H 5 V 0 Z M 5,1 V 2 H 6 V 1 Z M 6,2 V 3 H 5 V 4 H 6 V 5 H 7 V 2 Z M 6,5 H 5 V 6 H 6 Z M 5,6 H 4 V 5 H 3 V 6 H 2 V 7 H 5 Z M 2,6 V 5 H 1 V 6 Z M 1,5 V 4 H 2 V 3 H 1 V 2 H 0 V 5 Z M 1,2 H 2 V 1 H 1 Z"/></svg>`,
+  book: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="7" height="7" fill="#000"/><rect x="1" y="1" width="5" height="5" fill="#fff8e1"/><rect x="1" y="1" width="1" height="5" fill="#5d4037"/><rect x="5" y="3" width="1" height="1" fill="#fbc02d"/></svg>`,
+  spark: `<svg class="pixel-icon" viewBox="0 0 8 8"><path d="M 4,0 H 2 V 3 H 0 V 4 H 3 V 8 H 4 V 5 H 6 V 4 H 4 Z" fill="#f7d51d"/></svg>`,
+  tree: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="2" y="0" width="4" height="4" fill="#2e7d32"/><rect x="1" y="1" width="6" height="3" fill="#388e3c"/><rect x="3" y="4" width="2" height="4" fill="#5d4037"/></svg>`,
+  crafting: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="8" height="8" fill="#5d4037"/><rect x="1" y="1" width="6" height="6" fill="#8d6e63"/><rect x="1" y="1" width="3" height="3" fill="#d7ccc8"/><rect x="4" y="4" width="3" height="3" fill="#d7ccc8"/></svg>`,
+  gear: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="3" y="0" width="2" height="8" fill="#000"/><rect x="0" y="3" width="8" height="2" fill="#000"/><rect x="1" y="1" width="6" height="6" fill="#000"/><rect x="2" y="2" width="4" height="4" fill="#aaa"/><rect x="3" y="3" width="2" height="2" fill="#212529"/></svg>`
+};
+
+export type IconName = keyof typeof ICONS;
+</file>
+
+<file path="src/data/regions.ts">
+import type { Region } from '../types/world';
+import type { Passage } from '../types/narrative';
+import { STORY_PASSAGES } from './storyPassages';
+import { MobConfig } from '../models/Mob';
+import { BESTIARY } from './bestiary';
+
+export const CUSTOM_WORLD_STORAGE_KEY = 'minecraft_custom_world_dataset';
+
+export interface OpenWorldPackage {
+  regions: Record<string, Region>;
+  passages: Record<string, Passage>;
+  mobs: Record<string, MobConfig>;
+}
+
+export const REGIONS: Record<string, Region> = {
+  plains_settlement: {
+    id: 'plains_settlement',
+    name: 'Riverwood Vale',
+    description: 'A rustic timber settlement resting in a river gorge beneath snowy mountain peaks.',
+    biome: 'plains',
+    adjacentRegionIds: ['bleak_falls_pass'],
+    dangerLevel: 1,
+    encounterTable: [
+      { mob: 'Spider', rollRange: [1, 3], label: 'River Spider' },
+      { mob: 'Zombie', rollRange: [4, 6], label: 'Wandering Bandit' },
+    ],
+    pointsOfInterest: [
+      {
+        id: 'riverwood_village',
+        name: 'Riverwood Settlement',
+        description: 'A cluster of timber dwellings, a lumber mill, and an open stone forge.',
+        entryNodeId: 'town_square',
+        hidden: false,
+        nodes: {
+          town_square: {
+            id: 'town_square',
+            title: 'Village Crossroads',
+            description: 'The sawmill wheel turns steadily in the river. Down the gravel path stands the general merchant and local forge.',
+            actions: [],
+            exits: [
+              { targetNodeId: 'trader_shop', label: 'Enter Riverwood Trader' },
+              { targetNodeId: 'blacksmith_forge', label: 'Approach Blacksmith Anvil' },
+              { exitToRegion: true, label: 'Head out to the wilderness road' },
+            ],
+            questHooks: [],
+          },
+          trader_shop: {
+            id: 'trader_shop',
+            title: 'Riverwood Trader',
+            description: 'Counter shelves filled with dried rations and mining supplies. The merchant mutters about a stolen family heirloom.',
+            exits: [
+              { targetNodeId: 'town_square', label: 'Step outside to the village path' },
+            ],
+            actions: [],
+            questHooks: [
+              {
+                id: 'lucan_quest_hook',
+                questId: 'golden_claw',
+                label: 'Inquire about the bandit break-in',
+                passageId: 'abandoned_shack',
+                condition: {
+                  type: 'binary',
+                  op: '!=',
+                  left: { type: 'get', path: 'flags.golden_claw_recovered' },
+                  right: { type: 'literal', value: true },
+                },
+              },
+            ],
+          },
+          blacksmith_forge: {
+            id: 'blacksmith_forge',
+            title: 'Village Forge',
+            description: 'A hearth with hot coals and a heavy anvil. Tools and iron tongs hang ready.',
+            accessibleViews: ['crafting'],
+            exits: [
+              { targetNodeId: 'town_square', label: 'Back to the crossroads' },
+            ],
+            actions: [],
+            questHooks: [],
+          },
+        },
+      },
+      {
+        id: 'hidden_hunter_blind',
+        name: 'Abandoned Hunter Blind',
+        description: 'A hidden lean-to tucked deep into the treeline along the riverbank.',
+        entryNodeId: 'hunter_blind_camp',
+        hidden: true,
+        minTrekTotal: 4,
+        discoveryLog: 'Parted thick riverside ferns and uncovered an old hunter campsite!',
+        nodes: {
+          hunter_blind_camp: {
+            id: 'hunter_blind_camp',
+            title: 'Hunter Blind Shelter',
+            description: 'An old spruce shelter containing salvaged skins, seasoned logs, and a cold firepit.',
+            accessibleViews: ['forest'],
+            actions: [
+              {
+                id: 'gather_timber',
+                label: 'Chop dry firewood (+2 Wood)',
+                type: 'gather',
+                resourceGain: { material: 'Wood', count: 2 },
+              },
+            ],
+            exits: [
+              { exitToRegion: true, label: 'Return to the wilderness trail' },
+            ],
+            questHooks: [],
+          },
+        },
+      },
+    ],
+  },
+  bleak_falls_pass: {
+    id: 'bleak_falls_pass',
+    name: 'Bleak Falls Pass',
+    description: 'A steep mountain road climbing into freezing mist and ancient stone ruins.',
+    biome: 'mountains',
+    adjacentRegionIds: ['plains_settlement'],
+    dangerLevel: 3,
+    encounterTable: [
+      { mob: 'Skeleton', rollRange: [1, 3], label: 'Draugr Sentry' },
+      { mob: 'Cave Spider', rollRange: [4, 6], label: 'Frostbite Spider' },
+    ],
+    pointsOfInterest: [
+      {
+        id: 'mountain_watchtower',
+        name: 'Overlook Watchtower',
+        description: 'A ruined stone watchtower surveying the mountain ascent.',
+        entryNodeId: 'watchtower_ground',
+        hidden: true,
+        minTrekTotal: 4,
+        discoveryLog: 'Spotted a mossy stone lookout tower standing high above the road!',
+        nodes: {
+          watchtower_ground: {
+            id: 'watchtower_ground',
+            title: 'Watchtower Ground Floor',
+            description: 'A shattered wooden door opens onto a flagstone floor strewn with bandit supplies.',
+            actions: [
+              { id: 'patrol_fight', label: 'Engage Bandit Scout', type: 'combat', mobName: 'Zombie' },
+            ],
+            exits: [
+              { exitToRegion: true, label: 'Descend to mountain path' },
+            ],
+            questHooks: [],
+          },
+        },
+      },
+      {
+        id: 'bleak_falls_barrow',
+        name: 'Bleak Falls Barrow',
+        description: 'A massive ancient stone temple embedded into the frozen mountain face.',
+        entryNodeId: 'barrow_vestibule',
+        hidden: true,
+        minTrekTotal: 8,
+        discoveryLog: 'Pushed past the blizzard ridge and discovered the colossal entrance to Bleak Falls Barrow!',
+        nodes: {
+          barrow_vestibule: {
+            id: 'barrow_vestibule',
+            title: 'Temple Vestibule',
+            description: 'Carved stone arches draped in webs. The freezing wind dies down as you step inside.',
+            accessibleViews: ['mining'],
+            actions: [
+              {
+                id: 'excavate_rubble',
+                label: 'Excavate loose rubble (+1 Stone)',
+                type: 'gather',
+                resourceGain: { material: 'Stone', count: 1 },
+              },
+            ],
+            exits: [
+              { targetNodeId: 'crypt_inner_gate', label: 'Descend into the catacombs' },
+              { exitToRegion: true, label: 'Exit back to mountain pass' },
+            ],
+            questHooks: [],
+          },
+          crypt_inner_gate: {
+            id: 'crypt_inner_gate',
+            title: 'Reinforced Crypt Gate',
+            description: 'A heavy iron portcullis blocks passage into the inner burial chambers.',
+            actions: [
+              { id: 'gate_sentinel', label: 'Fight Gate Guardian', type: 'combat', mobName: 'Skeleton' },
+            ],
+            exits: [
+              { targetNodeId: 'barrow_vestibule', label: 'Retreat to vestibule' },
+            ],
+            questHooks: [],
+          },
+        },
+      },
+    ],
+  },
+};
+
+export function validateWorldPackage(raw: unknown): OpenWorldPackage | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const candidate = raw as Record<string, any>;
+
+  const regionsObj = candidate.regions || candidate;
+  if (!regionsObj || typeof regionsObj !== 'object') return null;
+
+  for (const reg of Object.values(regionsObj)) {
+    if (
+      typeof (reg as any).id !== 'string' ||
+      typeof (reg as any).name !== 'string' ||
+      typeof (reg as any).description !== 'string' ||
+      !Array.isArray((reg as any).pointsOfInterest)
+    ) {
+      return null;
+    }
+  }
+
+  const passagesObj = candidate.passages || STORY_PASSAGES;
+
+  const mobsObj =
+    candidate.mobs && typeof candidate.mobs === 'object' && !Array.isArray(candidate.mobs)
+      ? candidate.mobs
+      : Object.fromEntries(BESTIARY.map((m) => [m.id, JSON.parse(JSON.stringify(m))]));
+
+  return {
+    regions: regionsObj as Record<string, Region>,
+    passages: passagesObj as Record<string, Passage>,
+    mobs: mobsObj as Record<string, MobConfig>,
+  };
+}
+
+export function getInitialWorldPackage(): OpenWorldPackage {
+  const custom = localStorage.getItem(CUSTOM_WORLD_STORAGE_KEY);
+  if (custom) {
+    try {
+      const parsed = JSON.parse(custom);
+      const validated = validateWorldPackage(parsed);
+      if (validated) return validated;
+    } catch {
+      console.warn('Failed to parse custom world package. Falling back to default.');
+    }
+  }
+  return {
+    regions: JSON.parse(JSON.stringify(REGIONS)),
+    passages: JSON.parse(JSON.stringify(STORY_PASSAGES)),
+    mobs: Object.fromEntries(BESTIARY.map((m) => [m.id, JSON.parse(JSON.stringify(m))]))
+  };
+}
+</file>
+
+<file path="src/data/storyPassages.ts">
+import type { Passage, MobTableEntry } from '../types/narrative';
+
+export const CUSTOM_STORY_STORAGE_KEY = 'minecraft_custom_story_passages';
+
+export const STORY_PASSAGES: Record<string, Passage> = {
+  start: {
+    id: 'start',
+    title: 'Awakening at Sunrise',
+    text: 'You awake atop a grassy hill overlooking a vast voxel frontier. Morning light bathes the blocky wilderness. In your hand is your trusty Wooden Pickaxe. To the east, the sun casts long shadows over an ominous tree line. To the north, a dark cave mouth opens into the hillside. Down the slope sits a weathered woodcutter shack.',
+    icon: '',
+    accessibleViews: ['forest'],
+    choices: [
+      {
+        text: "Investigate the abandoned woodcutter's shack down the slope",
+        targetPassageId: 'abandoned_shack',
+      },
+      {
+        text: 'Enter the Deep Woods',
+        targetPassageId: 'deep_woods_entrance',
+      },
+      {
+        text: 'Approach the dark cave mouth in the hillside',
+        targetPassageId: 'cavern_mouth',
+      },
+    ],
+  },
+  abandoned_shack: {
+    id: 'abandoned_shack',
+    title: "Abandoned Woodcutter's Shack",
+    text: "The wooden door hangs crooked on rusty hinges. Dust motes dance in rays of sunlight. Inside sits an intact Crafting Bench, and buried beneath a floorboard is a traveler's chest containing dry timber and a lit Torch!",
+    icon: '',
+    onEnterMutations: [
+      { type: 'inventory', action: 'add', itemId: 'Torch' },
+      { type: 'inventory', action: 'add', itemId: 'Wood', count: { type: 'literal', value: 2 }, isMaterial: true },
+    ],
+    accessibleViews: ['crafting'],
+    choices: [
+      {
+        text: 'Use the Crafting Bench to forge equipment',
+        type: 'view',
+        targetView: 'crafting',
+      },
+      {
+        text: 'Follow a worn path behind the cabin into the woods',
+        targetPassageId: 'deep_woods_entrance',
+      },
+      {
+        text: 'Head back up to the grassy hill',
+        targetPassageId: 'start',
+      },
+    ],
+  },
+  deep_woods_entrance: {
+    id: 'deep_woods_entrance',
+    title: 'The Whispering Woods',
+    text: 'Towering oak and dark birch trees block out the daylight. The air is cool and dense. Vines hang low, and cobwebs stretch between ancient branches. A distant river rushes toward open water.',
+    icon: '',
+    accessibleViews: ['forest'],
+    choices: [
+      {
+        text: 'Forage and explore groves in the woods',
+        type: 'view',
+        targetView: 'forest',
+      },
+      {
+        text: 'Chop through dense brambles into a spider clearing (Requires 2 Groves Cleared)',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'game.sandbox.forestCleared' },
+          right: { type: 'literal', value: 2 },
+        },
+        lockedReason: 'Requires 2 Groves Cleared',
+        targetPassageId: 'spider_nest',
+      },
+      {
+        text: 'Sail along the woodland river to the coast (Requires a Boat)',
+        condition: {
+          type: 'has_item',
+          itemId: 'Boat',
+        },
+        lockedReason: 'Requires Boat',
+        targetPassageId: 'ocean_monument_shore',
+      },
+      {
+        text: 'Investigate violet smoke rising above the swamp trees',
+        targetPassageId: 'witch_hut',
+      },
+      {
+        text: 'Return to the sunny hill',
+        targetPassageId: 'start',
+      },
+    ],
+  },
+  spider_nest: {
+    id: 'spider_nest',
+    title: 'Web-Choked Clearing',
+    text: 'Thick silk strands bind the trees like walls. Skeletons of long-lost explorers hang suspended above. From the boughs above, glowing multi-faceted eyes fixate on you!',
+    icon: '',
+    choices: [
+      {
+        text: 'Draw your weapon and attack the lurking spider!',
+        type: 'combat',
+        mobTable: [
+          { mob: 'Spider', rollRange: [1, 3], label: '1-3: Giant Forest Spider' },
+          { mob: 'Cave Spider', rollRange: [4, 6], label: '4-6: Venomous Cave Spider' },
+        ],
+        onVictoryPassageId: 'spider_nest_cleared',
+        onDefeatPassageId: 'spider_nest_defeat',
+      },
+      {
+        text: 'Attempt to slip through the webs quietly (Agility Check 4+)',
+        type: 'dice_check',
+        diceCheck: {
+          target: 4,
+          successPassageId: 'deep_woods_entrance',
+          failurePassageId: 'spider_nest_ambush',
+          successText: 'You cut through the silk silently and escaped!',
+          failureText: 'Your boots snapped a silk anchor line! The spiders drop down!',
+        },
+      },
+    ],
+  },
+  spider_nest_ambush: {
+    id: 'spider_nest_ambush',
+    title: 'Entangled in Webbing!',
+    text: 'You are ensnared in sticky webs! A venomous Cave Spider lunges straight from the canopy!',
+    icon: '',
+    triggerCombat: {
+      mob: 'Cave Spider',
+      introText: 'The Cave Spider strikes while you are pinned!',
+      onVictoryPassageId: 'spider_nest_cleared',
+      onDefeatPassageId: 'spider_nest_defeat',
+    },
+    choices: [
+      {
+        text: 'Fight for survival!',
+        type: 'combat',
+        mob: 'Cave Spider',
+        onVictoryPassageId: 'spider_nest_cleared',
+        onDefeatPassageId: 'spider_nest_defeat',
+      },
+    ],
+  },
+  spider_nest_cleared: {
+    id: 'spider_nest_cleared',
+    title: 'Silk-Wrapped Hoard',
+    text: 'The fallen spider disintegrates into sticky threads. Behind its lair, you uncover discarded packs containing fresh leather hides and strong silk string.',
+    icon: '',
+    onEnterMutations: [
+      { type: 'inventory', action: 'add', itemId: 'String', count: { type: 'literal', value: 3 }, isMaterial: true },
+      { type: 'inventory', action: 'add', itemId: 'Leather', count: { type: 'literal', value: 2 }, isMaterial: true },
+    ],
+    accessibleViews: ['forest'],
+    choices: [
+      {
+        text: 'Trek toward the swamp smoke',
+        targetPassageId: 'witch_hut',
+      },
+      {
+        text: 'Return to the forest entrance',
+        targetPassageId: 'deep_woods_entrance',
+      },
+    ],
+  },
+  witch_hut: {
+    id: 'witch_hut',
+    title: "The Swamp Witch's Stilt Hut",
+    text: 'A rickety spruce hut stands perched on wooden stilts above murky water. Inside, a Witch cackles as purple steam roils out of an iron cauldron.',
+    icon: '',
+    choices: [
+      {
+        text: 'Ambush the Witch while she brews!',
+        type: 'combat',
+        mob: 'Witch',
+        onVictoryPassageId: 'witch_spoils',
+        onDefeatPassageId: 'witch_defeat',
+      },
+      {
+        text: 'Carefully sneak inside to snatch ingredients (Stealth Check 4+)',
+        type: 'dice_check',
+        diceCheck: {
+          target: 4,
+          successPassageId: 'witch_spoils',
+          failurePassageId: 'witch_trap',
+          successText: 'You stealthily looted the potion shelves!',
+          failureText: 'A potion vial tipped over and smashed! The Witch whips around!',
+        },
+      },
+      {
+        text: 'Quietly slip back into the woods',
+        targetPassageId: 'deep_woods_entrance',
+      },
+    ],
+  },
+  witch_trap: {
+    id: 'witch_trap',
+    title: 'Corrosive Mist!',
+    text: 'The Witch hurls a Splash Potion of Harming directly at your boots! Corrosive vapors fill the air as she brandishes another brew!',
+    icon: '',
+    triggerCombat: {
+      mob: 'Witch',
+      introText: 'The enraged Witch charges into battle!',
+      onVictoryPassageId: 'witch_spoils',
+      onDefeatPassageId: 'witch_defeat',
+    },
+    choices: [
+      {
+        text: 'Battle the Witch!',
+        type: 'combat',
+        mob: 'Witch',
+        onVictoryPassageId: 'witch_spoils',
+        onDefeatPassageId: 'witch_defeat',
+      },
+    ],
+  },
+  witch_spoils: {
+    id: 'witch_spoils',
+    title: "The Alchemist's Stash",
+    text: 'The Witch vanishes with a shriek. The bubbling cauldron calms, leaving behind precious alchemy supplies and an invigorating medicinal elixir.',
+    icon: '',
+    onEnterMutations: [
+      { type: 'inventory', action: 'add', itemId: 'Gunpowder', count: { type: 'literal', value: 3 }, isMaterial: true },
+      { type: 'inventory', action: 'add', itemId: 'Slimeball', count: { type: 'literal', value: 2 }, isMaterial: true },
+    ],
+    choices: [
+      {
+        text: 'Head back to the Deep Woods',
+        targetPassageId: 'deep_woods_entrance',
+      },
+      {
+        text: 'Return to the hilltop shelter',
+        targetPassageId: 'start',
+      },
+    ],
+  },
+  cavern_mouth: {
+    id: 'cavern_mouth',
+    title: 'The Mouth of the Abyss',
+    text: 'A cavern opening plunges into subterranean gloom. Cold, damp air rises from the dark with the faint clatter of bones and rumbling stone.',
+    icon: '',
+    choices: [
+      {
+        text: 'Hold your Torch high and venture deep underground (Requires Torch)',
+        condition: {
+          type: 'has_item',
+          itemId: 'Torch',
+        },
+        lockedReason: 'Requires Torch',
+        targetPassageId: 'lit_cavern',
+      },
+      {
+        text: 'Feel your way down blindly without a light (Perception Check 4+)',
+        type: 'dice_check',
+        diceCheck: {
+          target: 4,
+          successPassageId: 'lit_cavern',
+          failurePassageId: 'cavern_ambush',
+          successText: 'You navigated the treacherous ledges safely!',
+          failureText: 'You slipped on wet gravel and slid into a monster nest!',
+        },
+      },
+      {
+        text: 'Retreat to the safety of the hillside',
+        targetPassageId: 'start',
+      },
+    ],
+  },
+  cavern_ambush: {
+    id: 'cavern_ambush',
+    title: 'Ambush in the Dark!',
+    text: 'You crash onto a lower stone ledge. In the pitch black, hostile shapes emerge from the gloom!',
+    icon: '',
+    triggerCombat: {
+      mobTable: [
+        { mob: 'Zombie', rollRange: [1, 2], label: '1-2: Cavern Zombie' },
+        { mob: 'Skeleton', rollRange: [3, 4], label: '3-4: Skeleton Archer' },
+        { mob: 'Creeper', rollRange: [5, 6], label: '5-6: Hissing Creeper' },
+      ],
+      introText: 'A hostile subterranean monster attacks!',
+      onVictoryPassageId: 'lit_cavern',
+      onDefeatPassageId: 'cavern_defeat',
+    },
+    choices: [
+      {
+        text: 'Fight the cavern beast!',
+        type: 'combat',
+        mobTable: [
+          { mob: 'Zombie', rollRange: [1, 2], label: '1-2: Cavern Zombie' },
+          { mob: 'Skeleton', rollRange: [3, 4], label: '3-4: Skeleton Archer' },
+          { mob: 'Creeper', rollRange: [5, 6], label: '5-6: Hissing Creeper' },
+        ],
+        onVictoryPassageId: 'lit_cavern',
+        onDefeatPassageId: 'cavern_defeat',
+      },
+    ],
+  },
+  lit_cavern: {
+    id: 'lit_cavern',
+    title: 'The Subterranean Quarry',
+    text: 'Torchlight reveals a vast mining chamber. Veins of coal, iron, and stone cross the walls. Old mining tracks stretch into the deep.',
+    icon: '',
+    accessibleViews: ['mining'],
+    choices: [
+      {
+        text: 'Excavate the mineral veins on a Mining Expedition',
+        type: 'view',
+        targetView: 'mining',
+      },
+      {
+        text: 'Descend deeper toward the roar of molten lava',
+        targetPassageId: 'lava_chamber',
+      },
+      {
+        text: 'Climb back up to the surface',
+        targetPassageId: 'cavern_mouth',
+      },
+    ],
+  },
+  lava_chamber: {
+    id: 'lava_chamber',
+    title: 'The Magma Chasm',
+    text: 'Intense heat radiates from a vast underground lake of boiling lava. Across the lake stands a fortified dungeon gate carved into obsidian bedrock. A broken stone path crosses the molten lake.',
+    icon: '',
+    choices: [
+      {
+        text: 'Pour water from a Bucket to create a solid obsidian bridge (Requires Bucket)',
+        condition: {
+          type: 'has_item',
+          itemId: 'Bucket',
+        },
+        lockedReason: 'Requires Bucket',
+        targetPassageId: 'dungeon_gate',
+      },
+      {
+        text: 'Build a makeshift wooden walkway (Costs 3 Wood)',
+        condition: {
+          type: 'binary',
+          op: '>=',
+          left: { type: 'get', path: 'hero.materials.Wood' },
+          right: { type: 'literal', value: 3 },
+        },
+        mutations: [
+          { type: 'inventory', action: 'remove', itemId: 'Wood', count: { type: 'literal', value: 3 }, isMaterial: true },
+        ],
+        lockedReason: 'Requires 3 Wood',
+        targetPassageId: 'dungeon_gate',
+      },
+      {
+        text: 'Sprint and leap across crumbling magma blocks (Agility Check 5+)',
+        type: 'dice_check',
+        diceCheck: {
+          target: 5,
+          successPassageId: 'dungeon_gate',
+          failurePassageId: 'lava_burn',
+          successText: 'You leaped cleanly across the molten chasm!',
+          failureText: 'A magma ledge collapsed, splashing you with boiling lava!',
+        },
+      },
+      {
+        text: 'Retreat back to the mining quarry',
+        targetPassageId: 'lit_cavern',
+      },
+    ],
+  },
+  lava_burn: {
+    id: 'lava_burn',
+    title: 'Scorched by Lava!',
+    text: 'You scramble backward onto stone with smoldering boots! The lava lake bubbles menacingly.',
+    icon: '',
+    choices: [
+      {
+        text: 'Catch your breath and reconsider',
+        targetPassageId: 'lava_chamber',
+      },
+      {
+        text: 'Retreat to the upper quarry to recover',
+        targetPassageId: 'lit_cavern',
+      },
+    ],
+  },
+  dungeon_gate: {
+    id: 'dungeon_gate',
+    title: 'The Fortified Dungeon Gate',
+    text: 'You reach the reinforced obsidian gate. Heavy iron bars block access to the treasure vault. A hulking Vindicator wielding an enchanted iron axe guards the door!',
+    icon: '',
+    choices: [
+      {
+        text: 'Challenge the Vindicator guard in combat!',
+        type: 'combat',
+        mob: 'Vindicator',
+        onVictoryPassageId: 'vault_room',
+        onDefeatPassageId: 'dungeon_gate_defeat',
+      },
+      {
+        text: 'Blast the fortified gate apart with TNT (Requires TNT)',
+        condition: {
+          type: 'has_item',
+          itemId: 'TNT',
+        },
+        mutations: [
+          { type: 'inventory', action: 'remove', itemId: 'TNT' },
+        ],
+        lockedReason: 'Requires TNT',
+        targetPassageId: 'vault_room',
+      },
+      {
+        text: 'Mine through the obsidian walls with a Diamond Pickaxe (Requires Diamond Pickaxe)',
+        condition: {
+          type: 'has_item',
+          itemId: 'Diamond Pickaxe',
+        },
+        lockedReason: 'Requires Diamond Pickaxe',
+        targetPassageId: 'vault_room',
+      },
+      {
+        text: 'Back away to the lava lake ledge',
+        targetPassageId: 'lava_chamber',
+      },
+    ],
+  },
+  vault_room: {
+    id: 'vault_room',
+    title: 'The Vault of Wonders',
+    text: 'The heavy barrier crumbles! Inside lies an altar glowing with warm golden light. On top sits a radiant Totem of Undying, accompanied by raw diamonds and forged iron ingots!',
+    icon: '',
+    onEnterMutations: [
+      { type: 'inventory', action: 'add', itemId: 'Totem of Undying' },
+      { type: 'inventory', action: 'add', itemId: 'Diamond', count: { type: 'literal', value: 3 }, isMaterial: true },
+      { type: 'inventory', action: 'add', itemId: 'Iron', count: { type: 'literal', value: 3 }, isMaterial: true },
+    ],
+    accessibleViews: ['crafting'],
+    choices: [
+      {
+        text: 'Use the vault anvil to craft masterwork equipment',
+        type: 'view',
+        targetView: 'crafting',
+      },
+      {
+        text: 'Complete your journey in glorious triumph!',
+        targetPassageId: 'victory_epilogue',
+      },
+    ],
+  },
+  ocean_monument_shore: {
+    id: 'ocean_monument_shore',
+    title: 'The Prismarine Coast',
+    text: 'Riding your wooden boat onto the sea, you gaze into clear depths. Beneath the waves lies an underwater temple glowing with prismarine lanterns. Spiky Guardians patrol the entrance.',
+    icon: '',
+    choices: [
+      {
+        text: 'Dive into the ocean to engage the Guardian sentry!',
+        type: 'combat',
+        mob: 'Guardian',
+        onVictoryPassageId: 'elder_sanctum',
+        onDefeatPassageId: 'ocean_defeat',
+      },
+      {
+        text: 'Explore the sunken shipwreck reef (Requires Iron Sword)',
+        condition: {
+          type: 'has_item',
+          itemId: 'Iron Sword',
+        },
+        lockedReason: 'Requires Iron Sword',
+        targetPassageId: 'drowned_shore',
+      },
+      {
+        text: 'Row your boat back to the forest shore',
+        targetPassageId: 'deep_woods_entrance',
+      },
+    ],
+  },
+  drowned_shore: {
+    id: 'drowned_shore',
+    title: 'The Shipwreck Cove',
+    text: 'A rotten galleon rests on the reef. From the seaweed rises an armored Drowned holding a gleaming trident!',
+    icon: '',
+    triggerCombat: {
+      mob: 'Drowned',
+      introText: 'The Drowned emerges from the surf!',
+      onVictoryPassageId: 'drowned_spoils',
+      onDefeatPassageId: 'ocean_defeat',
+    },
+    choices: [
+      {
+        text: 'Battle the Drowned!',
+        type: 'combat',
+        mob: 'Drowned',
+        onVictoryPassageId: 'drowned_spoils',
+        onDefeatPassageId: 'ocean_defeat',
+      },
+      {
+        text: 'Swim back to your boat',
+        targetPassageId: 'ocean_monument_shore',
+      },
+    ],
+  },
+  drowned_spoils: {
+    id: 'drowned_spoils',
+    title: "Sunken Ship's Bounty",
+    text: 'The Drowned collapses into bubbles. Inside the half-submerged cargo hold, you discover salvage: forged iron, fresh fish, and cured leather.',
+    icon: '',
+    onEnterMutations: [
+      { type: 'inventory', action: 'add', itemId: 'Iron', count: { type: 'literal', value: 2 }, isMaterial: true },
+      { type: 'inventory', action: 'add', itemId: 'Fish', count: { type: 'literal', value: 3 }, isMaterial: true },
+      { type: 'inventory', action: 'add', itemId: 'Leather', count: { type: 'literal', value: 2 }, isMaterial: true },
+    ],
+    choices: [
+      {
+        text: 'Return to the Ocean Monument',
+        targetPassageId: 'ocean_monument_shore',
+      },
+      {
+        text: 'Sail back to the forest',
+        targetPassageId: 'deep_woods_entrance',
+      },
+    ],
+  },
+  elder_sanctum: {
+    id: 'elder_sanctum',
+    title: "The Elder Guardian's Throne",
+    text: 'You swim into the prismarine inner sanctum. The colossal Elder Guardian hovers in the center, charging its laser beam and locking its unblinking eye upon you!',
+    icon: '',
+    triggerCombat: {
+      mob: 'Elder Guardian',
+      introText: 'The ancient titan unleashes its beam!',
+      onVictoryPassageId: 'victory_epilogue',
+      onDefeatPassageId: 'ocean_defeat',
+    },
+    choices: [
+      {
+        text: 'Confront and defeat the Elder Guardian!',
+        type: 'combat',
+        mob: 'Elder Guardian',
+        onVictoryPassageId: 'victory_epilogue',
+        onDefeatPassageId: 'ocean_defeat',
+      },
+      {
+        text: 'Swim back to the surface boat',
+        targetPassageId: 'ocean_monument_shore',
+      },
+    ],
+  },
+  victory_epilogue: {
+    id: 'victory_epilogue',
+    title: 'Champion of the Overworld',
+    text: 'Victory! You have explored dark depths, vanquished mythical beasts, navigated chasms, and forged masterwork equipment. Your name is etched into the bedrock as a true adventurer!',
+    icon: '',
+    choices: [
+      {
+        text: 'Return to the hilltop and continue exploring the realm',
+        targetPassageId: 'start',
+      },
+    ],
+  },
+  spider_nest_defeat: {
+    id: 'spider_nest_defeat',
+    title: 'Cocooned and Dragged Away',
+    text: 'Paralyzing venom saps your strength as darkness closes in. You awaken hours later tangled in loose webbing near the forest perimeter.',
+    icon: '',
+    accessibleViews: ['forest'],
+    choices: [
+      {
+        text: 'Limp back to the forest entrance',
+        targetPassageId: 'deep_woods_entrance',
+      },
+      {
+        text: 'Stumble back to the hillside shelter',
+        targetPassageId: 'start',
+      },
+    ],
+  },
+  witch_defeat: {
+    id: 'witch_defeat',
+    title: 'Cursed in the Swamps',
+    text: 'Noxious potion fumes overcome you. The Witch cackles as she tosses you into the murky swamp water. You drag yourself ashore, soaking and bruised.',
+    icon: '',
+    accessibleViews: ['forest'],
+    choices: [
+      {
+        text: 'Retreat back to the deep woods',
+        targetPassageId: 'deep_woods_entrance',
+      },
+    ],
+  },
+  cavern_defeat: {
+    id: 'cavern_defeat',
+    title: 'Cast Out of the Cavern',
+    text: 'Overpowered in the dark, you tumble backward down a gravel chute and roll out into the daylight at the cavern mouth, bruised and battered.',
+    icon: '',
+    choices: [
+      {
+        text: 'Catch your breath at the cavern mouth',
+        targetPassageId: 'cavern_mouth',
+      },
+      {
+        text: 'Return to the hilltop shelter',
+        targetPassageId: 'start',
+      },
+    ],
+  },
+  dungeon_gate_defeat: {
+    id: 'dungeon_gate_defeat',
+    title: 'Repelled at the Gate',
+    text: "The Vindicator's crushing strike knocks you backward across the obsidian stones. You scramble back to safety before the iron gate slams shut.",
+    icon: '',
+    choices: [
+      {
+        text: 'Regroup at the lava chasm',
+        targetPassageId: 'lava_chamber',
+      },
+    ],
+  },
+  ocean_defeat: {
+    id: 'ocean_defeat',
+    title: 'Washed Ashore',
+    text: 'The crushing ocean depths and searing guardian beams overpower you. You lose consciousness and wash up coughing saltwater onto the coast.',
+    icon: '',
+    choices: [
+      {
+        text: 'Recover on the shore',
+        targetPassageId: 'ocean_monument_shore',
+      },
+      {
+        text: 'Return to the forest',
+        targetPassageId: 'deep_woods_entrance',
+      },
+    ],
+  },
+  combat_defeat: {
+    id: 'combat_defeat',
+    title: 'Defeated in Battle',
+    text: 'Your vision fades as you collapse. You awaken some time later, having barely survived the encounter.',
+    icon: '',
+    choices: [
+      {
+        text: 'Return to sunrise hill',
+        targetPassageId: 'start',
+      },
+    ],
+  },
+};
+
+export function getPassage(id: string): Passage {
+  return STORY_PASSAGES[id] || STORY_PASSAGES.start;
+}
+
+export function rollOnMobTable(table: MobTableEntry[]): { mob: string; roll: number } {
+  const roll = Math.floor(Math.random() * 6) + 1;
+  const match = table.find((entry) => roll >= entry.rollRange[0] && roll <= entry.rollRange[1]);
+  return {
+    mob: match ? match.mob : table[0].mob,
+    roll,
+  };
+}
+
+export function validateNarrative(raw: unknown): Record<string, Passage> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+
+  const candidate = raw as Record<string, any>;
+  if (Object.keys(candidate).length === 0) {
+    return null;
+  }
+
+  for (const passage of Object.values(candidate)) {
+    if (
+      typeof passage.id !== 'string' ||
+      typeof passage.title !== 'string' ||
+      typeof passage.text !== 'string' ||
+      !Array.isArray(passage.choices)
+    ) {
+      return null;
+    }
+  }
+
+  return candidate as Record<string, Passage>;
+}
+
+export function getInitialStoryPassages(): Record<string, Passage> {
+  const custom = localStorage.getItem(CUSTOM_STORY_STORAGE_KEY);
+  if (custom) {
+    try {
+      const parsed = JSON.parse(custom);
+      const validated = validateNarrative(parsed);
+      if (validated) return validated;
+    } catch {
+      console.warn('Failed to parse custom narrative. Falling back to default.');
+    }
+  }
+  return STORY_PASSAGES;
+}
+</file>
+
+<file path="src/engine/CombatEngine.ts">
+import type { Character } from '../models/Character';
+import type { Mob } from '../models/Mob';
+import type { Entity } from '../models/Entity';
+import type { CombatContext, CombatLifecycleHooks, DamageResult } from '../types/combat';
+
+export interface RoundResult {
+  status: 'ongoing' | 'victory' | 'defeat';
+  heroDmgRes?: DamageResult;
+  mobDmgRes?: DamageResult;
+}
+
+export class CombatEngine {
+  public ctx: CombatContext;
+
+  constructor(hero: Character, mob: Mob) {
+    this.ctx = {
+      combatState: {
+        turn: 0,
+        effects: [],
+        hero,
+        mob,
+        ignoreArmor: false,
+        heroDmgPenalty: 0,
+      },
+      roundState: {
+        diceCount: 1,
+        rolls: [],
+        hits: 0,
+        misses: 0,
+        missRolls: [],
+        matchingHits: 0,
+        matchingMisses: 0,
+        heroDamageInstances: [],
+        mobDamageInstances: [],
+        messages: [],
+        preventDeath: false,
+        dyingEntity: null,
+      },
+    };
+  }
+
+  public dispatchHook(hookName: keyof CombatLifecycleHooks): void {
+    const listeners: (CombatLifecycleHooks | undefined)[] = [
+      this.ctx.combatState.hero,
+      this.ctx.combatState.mob,
+      ...this.ctx.combatState.effects,
+    ];
+
+    for (const listener of listeners) {
+      listener?.[hookName]?.(this.ctx);
+    }
+  }
+
+  public initCombat(): void {
+    this.dispatchHook('onCombatStart');
+  }
+
+  public executeRound(diceCount: number, targetDef: number, customRolls?: number[]): RoundResult {
+    this.ctx.combatState.turn++;
+    this.ctx.roundState = {
+      diceCount: Math.min(this.ctx.combatState.hero.attack, Math.max(1, diceCount)),
+      rolls: [],
+      hits: 0,
+      misses: 0,
+      missRolls: [],
+      matchingHits: 0,
+      matchingMisses: 0,
+      heroDamageInstances: [],
+      mobDamageInstances: [],
+      messages: [],
+      preventDeath: false,
+      dyingEntity: null,
+    };
+
+    this.dispatchHook('onRoundStart');
+    if (this.ctx.combatState.hero.hearts <= 0 && !this.handleDeath(this.ctx.combatState.hero)) {
+      return { status: 'defeat' };
+    }
+
+    // Pass custom rolls to dice evaluation
+    this.rollDice(targetDef, customRolls);
+    this.dispatchHook('onRollEvaluated');
+
+    if (this.ctx.roundState.matchingMisses >= 4) {
+      this.ctx.combatState.hero.hearts = 0;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '💀 CRITICAL MISS (QUADRUPLE): Complete failure! Instant Loss!',
+      });
+      this.dispatchHook('onCombatEnd');
+      return { status: 'defeat' };
+    }
+
+    if (this.ctx.roundState.matchingHits === 3) {
+      const roll = Math.floor(Math.random() * 6) + 1;
+      this.applyCritHitEffect(roll);
+    } else if (this.ctx.roundState.matchingHits >= 4) {
+      this.ctx.roundState.pendingCritHitPick = true;
+    }
+
+    if (this.ctx.roundState.matchingMisses === 3) {
+      const roll = Math.floor(Math.random() * 6) + 1;
+      this.applyCritMissEffect(roll);
+    }
+
+    this.applyStandardDamages();
+    this.dispatchHook('onDealDamage');
+    this.dispatchHook('onReceiveDamage');
+
+    const heroDmgRes = this.ctx.combatState.mob.takeDamage(this.ctx.roundState.heroDamageInstances, this.ctx);
+    const mobDmgRes = this.ctx.combatState.hero.takeDamage(this.ctx.roundState.mobDamageInstances, this.ctx);
+
+    if (this.ctx.combatState.mob.isDefeated() && !this.handleDeath(this.ctx.combatState.mob)) {
+      this.dispatchHook('onCombatEnd');
+      return { status: 'victory', heroDmgRes, mobDmgRes };
+    }
+    if (this.ctx.combatState.hero.isDefeated() && !this.handleDeath(this.ctx.combatState.hero)) {
+      this.dispatchHook('onCombatEnd');
+      return { status: 'defeat', heroDmgRes, mobDmgRes };
+    }
+
+    this.dispatchHook('onRoundEnd');
+    return { status: 'ongoing', heroDmgRes, mobDmgRes };
+  }
+
+  public rollDice(targetDef: number, customRolls?: number[]): void {
+    const hitCounts: Record<number, number> = {};
+    const missCounts: Record<number, number> = {};
+
+    for (let i = 0; i < this.ctx.roundState.diceCount; i++) {
+      const val = customRolls?.[i] ?? Math.floor(Math.random() * 6) + 1;
+      this.ctx.roundState.rolls.push(val);
+
+      if (val >= targetDef) {
+        this.ctx.roundState.hits++;
+        hitCounts[val] = (hitCounts[val] || 0) + 1;
+      } else {
+        this.ctx.roundState.misses++;
+        this.ctx.roundState.missRolls.push(val);
+        missCounts[val] = (missCounts[val] || 0) + 1;
+      }
+    }
+
+    this.ctx.roundState.matchingHits = Object.values(hitCounts).length > 0
+      ? Math.max(...Object.values(hitCounts))
+      : 0;
+    this.ctx.roundState.matchingMisses = Object.values(missCounts).length > 0
+      ? Math.max(...Object.values(missCounts))
+      : 0;
+  }
+
+  public applyCritHitEffect(option: number): void {
+    if (option === 1) {
+      this.ctx.combatState.mob.hearts = 0;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⭐ CRITICAL HIT [1]: Instant Win! The monster collapses immediately!',
+      });
+    } else if (option === 2 || option === 3) {
+      this.ctx.combatState.guaranteedLootRoll = 6;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⭐ CRITICAL HIT [2-3]: Lucky Spoils! Victory will guarantee a roll of 6 on loot!',
+      });
+    } else if (option === 4 || option === 5) {
+      this.ctx.combatState.pendingDiamondReward = (this.ctx.combatState.pendingDiamondReward || 0) + 1;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⭐ CRITICAL HIT [4-5]: Diamond Bounty! Victory will award +1 Diamond!',
+      });
+    } else if (option === 6) {
+      this.ctx.combatState.pendingDiamondReward = (this.ctx.combatState.pendingDiamondReward || 0) + 2;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⭐ CRITICAL HIT [6]: Massive Hoard! Victory will award +2 Diamonds!',
+      });
+    }
+  }
+
+  public applyCritMissEffect(roll: number): void {
+    if (roll === 1) {
+      if (!this.ctx.combatState.friendlyMobJoined) {
+        this.ctx.combatState.friendlyMobJoined = true;
+        this.ctx.combatState.heroDmgMultiplier = 2;
+        this.ctx.roundState.messages.push({
+          type: 'notice',
+          text: '🐾 CRITICAL MISS [1]: A friendly mob rushes to your aid! Hero damage is doubled!',
+        });
+      } else {
+        this.ctx.roundState.messages.push({
+          type: 'notice',
+          text: '🐾 CRITICAL MISS [1]: A friendly mob is already assisting you!',
+        });
+      }
+    } else if (roll === 2) {
+      this.ctx.combatState.mob.resetHealth();
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: `⚠️ CRITICAL MISS [2]: ${this.ctx.combatState.mob.name} rallied back to maximum health!`,
+      });
+    } else if (roll === 3) {
+      const w = this.ctx.combatState.hero.equipped.weapon;
+      if (w) {
+        this.ctx.combatState.hero.removeEquipment(w);
+        this.ctx.roundState.messages.push({
+          type: 'special',
+          text: `⚠️ CRITICAL MISS [3]: Your weapon (${w}) shattered!`,
+        });
+      }
+    } else if (roll === 4) {
+      const a = this.ctx.combatState.hero.equipped.armor;
+      if (a) {
+        this.ctx.combatState.hero.removeEquipment(a);
+        this.ctx.roundState.messages.push({
+          type: 'special',
+          text: `⚠️ CRITICAL MISS [4]: Your armor (${a}) was destroyed!`,
+        });
+      }
+    } else if (roll === 5) {
+      const w = this.ctx.combatState.hero.equipped.weapon;
+      const a = this.ctx.combatState.hero.equipped.armor;
+      if (w) this.ctx.combatState.hero.removeEquipment(w);
+      if (a) this.ctx.combatState.hero.removeEquipment(a);
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⚠️ CRITICAL MISS [5]: Catastrophic blunder! Both weapon and armor shattered!',
+      });
+    } else if (roll === 6) {
+      this.ctx.combatState.hero.hearts = 0;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '🔥 CRITICAL MISS [6]: You slipped into molten lava and died!',
+      });
+    }
+  }
+
+  private applyStandardDamages(): void {
+    let bonusHits = 0;
+    if (this.ctx.roundState.matchingHits === 2) bonusHits = 2;
+    else if (this.ctx.roundState.matchingHits === 3) bonusHits = 3;
+    else if (this.ctx.roundState.matchingHits >= 4) bonusHits = 4;
+
+    const totalHeroHits = this.ctx.roundState.hits + bonusHits;
+    if (totalHeroHits > 0) {
+      const baseDmg = Math.max(0, this.ctx.combatState.hero.damage - (this.ctx.combatState.heroDmgPenalty || 0));
+      const mult = this.ctx.combatState.heroDmgMultiplier || 1;
+      const dmg = baseDmg * mult;
+
+      this.ctx.roundState.heroDamageInstances.push({
+        amount: totalHeroHits * dmg,
+        source: `Hero Attack (${totalHeroHits} hits${mult > 1 ? ' x2 Friendly Mob' : ''})`,
+        appliesArmor: false,
+      });
+    }
+
+    let bonusMisses = 0;
+    if (this.ctx.roundState.matchingMisses === 2) bonusMisses = 2;
+    else if (this.ctx.roundState.matchingMisses === 3) bonusMisses = 3;
+
+    const totalMobHits = this.ctx.roundState.misses + bonusMisses;
+    if (totalMobHits > 0) {
+      const mobDmg = this.ctx.combatState.mob.damage;
+      this.ctx.roundState.mobDamageInstances.push({
+        amount: totalMobHits * mobDmg,
+        source: `${this.ctx.combatState.mob.name} Attack (${totalMobHits} hits)`,
+        appliesArmor: true,
+      });
+    }
+  }
+
+  private handleDeath(entity: Entity): boolean {
+    this.ctx.roundState.dyingEntity = entity;
+    this.dispatchHook('onDeath');
+    return this.ctx.roundState.preventDeath;
+  }
+}
+</file>
+
+<file path="src/models/Entity.ts">
+import { Observable } from './Observable';
+import type { DamageInstance, DamageResult, CombatContext } from '../types/combat';
+
+export interface EntityConfig {
+  name: string;
+  maxHearts: number;
+  hearts?: number;
+}
+
+export abstract class Entity extends Observable {
+  #data: EntityConfig;
+
+  constructor({ name, maxHearts, hearts }: EntityConfig) {
+    super();
+    this.#data = this.createReactiveStore({
+      name,
+      maxHearts,
+      hearts: hearts ?? maxHearts,
+    });
+  }
+
+  abstract readonly armor: number;
+
+  // --- Core Accessors ---
+  public get name(): string { return this.#data.name; }
+  public set name(val: string) { this.#data.name = val; }
+
+  public get maxHearts(): number { return this.#data.maxHearts; }
+  public set maxHearts(val: number) { this.#data.maxHearts = Math.max(1, val); }
+
+  public get hearts(): number { return this.#data.hearts ?? this.maxHearts; }
+  public set hearts(val: number) { this.#data.hearts = Math.max(0, Math.min(this.#data.maxHearts, val)); }
+
+  public get isDead(): boolean { return this.hearts <= 0; }
+
+  public get isAlive(): boolean { return !this.isDead; }
+
+  public isDefeated(): boolean { return this.isDead; }
+
+  // --- Domain Logic ---
+  public changeHealth(delta: number): void { this.hearts += delta; }
+
+  public resetHealth(): void { this.hearts = this.maxHearts; }
+
+  public takeDamage(instances: DamageInstance[], ctx?: CombatContext): DamageResult {
+    let appliedTotal = 0;
+    const details: string[] = [];
+
+    for (const inst of instances) {
+      let amt = inst.amount;
+      if (inst.appliesArmor && this.armor > 0 && !ctx?.combatState?.ignoreArmor) {
+        amt = Math.max(0, amt - this.armor);
+      }
+      this.hearts -= amt;
+      appliedTotal += amt;
+      details.push(`${inst.source}: ${amt} DMG`);
+    }
+
+    return { appliedTotal, details };
+  }
+
+  public toJSON(): EntityConfig {
+    return {
+      name: this.name,
+      hearts: this.hearts,
+      maxHearts: this.maxHearts,
+    };
+  }
+}
+</file>
+
+<file path="src/models/GameSave.ts">
+import type { GameSaveData, GameProgressionState } from '../types/game';
+import type { CharacterConfig } from "./Character";
+
+interface GameSaveBase<T extends string, U> {
+  character: CharacterConfig;
+  type: T;
+  data: U;
+}
+
+export interface SandboxData {
+  forestCleared: number;
+  mineCleared: number;
+}
+
+export type SandboxGameSave = GameSaveBase<"sandbox", SandboxData>;
+
+export interface NarrativeData {
+  currentPassageId: string;
+  visitedPassages: string[];
+}
+
+export type NarrativeGameSave = GameSaveBase<"narrative", NarrativeData>;
+
+export interface OpenWorldData {
+  currentRegionId: string;
+  currentPoiId: string | null;
+  currentNodeId: string | null;
+  discoveredRegions: string[];
+  discoveredPoiIds: string[];
+  questFlags: Record<string, any>;
+  counters: Record<string, number>;
+  customData: Record<string, any>;
+}
+
+export type OpenWorldGameSave = GameSaveBase<"open_world", OpenWorldData>;
+
+export type GameSave = SandboxGameSave | NarrativeGameSave | OpenWorldGameSave;
+
+export function initGameSave<T extends GameSave["type"]>(
+  type: T,
+  character: CharacterConfig
+): Extract<GameSave, { type: T }> {
+  return {
+    type,
+    character,
+    data: DATA_FACTORIES[type](),
+  } as Extract<GameSave, { type: T }>;
+}
+
+const DATA_FACTORIES = {
+  sandbox: (): SandboxData => ({
+    forestCleared: 0,
+    mineCleared: 0,
+  }),
+  narrative: (): NarrativeData => ({
+    currentPassageId: "start",
+    visitedPassages: [],
+  }),
+  open_world: (): OpenWorldData => ({
+    currentRegionId: "plains_settlement",
+    currentPoiId: null,
+    currentNodeId: null,
+    discoveredRegions: ["plains_settlement"],
+    discoveredPoiIds: [],
+    questFlags: {},
+    counters: { travelSteps: 0, trekBonus: 0 },
+    customData: {},
+  }),
+} as const;
+
+export function migrateSaveData(raw: any): GameSaveData {
+  const defaultProgression: GameProgressionState = {
+    mode: 'open_world',
+    activeView: 'world_map',
+    sandbox: { forestCleared: 0, mineCleared: 0 },
+    narrative: { currentPassageId: 'start', visitedPassages: [] },
+    openWorld: {
+      currentRegionId: 'plains_settlement',
+      currentPoiId: null,
+      currentNodeId: null,
+      discoveredRegions: ['plains_settlement'],
+      discoveredPoiIds: [],
+      questFlags: {},
+      counters: { travelSteps: 0, trekBonus: 0 },
+      customData: {},
+    },
+  };
+
+  if (!raw || typeof raw !== 'object') {
+    return {
+      version: 2,
+      character: {
+        name: 'Steve',
+        hearts: 20,
+        maxHearts: 20,
+        restarts: 0,
+        equipmentInventoryIds: ['Wooden Pickaxe'],
+        equipped: { weapon: null, armor: null, pickaxe: 'Wooden Pickaxe', key: null },
+        materials: {
+          Wood: 0, Stone: 0, Iron: 0, Coal: 0, Diamond: 0,
+          Leather: 0, String: 0, Wheat: 0, Gunpowder: 0, Slimeball: 0, Fish: 0,
+        },
+        materialRule: 'total',
+      },
+      game: defaultProgression,
+    };
+  }
+
+  return {
+    version: 2,
+    character: raw.character || raw,
+    game: raw.game
+      ? {
+          ...defaultProgression,
+          ...raw.game,
+          openWorld: {
+            ...defaultProgression.openWorld,
+            ...(raw.game.openWorld || {}),
+            counters: {
+              ...defaultProgression.openWorld.counters,
+              ...(raw.game.openWorld?.counters || {}),
+            },
+          },
+        }
+      : defaultProgression,
+  };
+}
+</file>
+
+<file path="src/types/narrative.ts">
+import { Expr, Action } from './ast';
+
+export type ChoiceType = 'passage' | 'combat' | 'view' | 'dice_check';
+
+export interface MobTableEntry {
+  mob: string;
+  rollRange: [number, number];
+  label?: string;
+}
+
+export interface DiceCheckConfig {
+  target: number;
+  successPassageId: string;
+  failurePassageId: string;
+  successText?: string;
+  failureText?: string;
+}
+
+export interface PassageChoice {
+  text: string;
+  type?: ChoiceType;
+  targetPassageId?: string;
+  targetView?: 'forest' | 'mining' | 'crafting';
+
+  condition?: Expr;
+  mutations?: Action[];
+  lockedReason?: string;
+  behavior?: 'hide' | 'disable';
+
+  mob?: string;
+  mobTable?: MobTableEntry[];
+  onVictoryPassageId?: string;
+  onDefeatPassageId?: string;
+
+  diceCheck?: DiceCheckConfig;
+}
+
+export interface PassageCombatTrigger {
+  mob?: string;
+  mobTable?: MobTableEntry[];
+  introText?: string;
+  onVictoryPassageId: string;
+  onDefeatPassageId?: string;
+}
+
+export interface Passage {
+  id: string;
+  title: string;
+  text: string;
+  icon?: string;
+
+  onEnterMutations?: Action[];
+  triggerCombat?: PassageCombatTrigger;
+  accessibleViews?: ('forest' | 'mining' | 'crafting')[];
+  choices: PassageChoice[];
+}
+</file>
+
+<file path="src/types/world.ts">
+import type { TrackedMaterial } from './inventory';
+import type { MobTableEntry } from './narrative';
+import type { Character } from '../models/Character';
+import type { OpenWorldProgression } from './game';
+import { Action, Expr } from './ast';
+
+// --- Travel Contracts ---
+export interface TravelRequest {
+  fromRegionId: string;
+  toRegionId: string;
+  travelMethod?: 'walk' | 'boat' | 'cart' | 'fast_travel';
+}
+
+export interface TravelCost {
+  materials?: Partial<Record<TrackedMaterial, number>>;
+  healthDelta?: number;
+  counterDeltas?: Record<string, number>;
+}
+
+export interface TravelOutcome {
+  success: boolean;
+  costApplied?: TravelCost;
+  combatMob?: string;
+  narrativePassageId?: string;
+  logMessages: string[];
+}
+
+export interface TravelResolver {
+  canTravel(
+    hero: Character,
+    state: OpenWorldProgression,
+    req: TravelRequest,
+    regions?: Record<string, Region>
+  ): { allowed: boolean; reason?: string };
+  resolveTravel(
+    hero: Character,
+    state: OpenWorldProgression,
+    req: TravelRequest,
+    regions?: Record<string, Region>
+  ): TravelOutcome;
+}
+
+// --- POI & World Contracts ---
+export interface POINodeExit {
+  targetNodeId?: string;
+  exitToRegion?: boolean;
+  label: string;
+  condition?: Expr;
+  mutations?: Action[];
+  lockedReason?: string;
+  behavior?: 'hide' | 'disable';
+}
+
+export interface ActionCondition {
+  condition?: Expr;
+  mutations?: Action[];
+  hiddenUntilMet?: boolean;
+}
+
+export interface POIRepeatableAction {
+  id: string;
+  label: string;
+  type: 'combat' | 'view' | 'gather' | 'rest';
+  mobName?: string;
+  view?: 'forest' | 'mining' | 'crafting';
+  resourceGain?: { material: TrackedMaterial; count: number };
+}
+
+export interface POIQuestHook {
+  id: string;
+  questId: string;
+  label: string;
+  passageId: string;
+  condition?: Expr;
+  mutations?: Action[];
+  lockedReason?: string;
+  behavior?: 'hide' | 'disable';
+}
+
+export interface POINode {
+  id: string;
+  title: string;
+  description: string;
+  accessibleViews?: ('forest' | 'mining' | 'crafting')[];
+  exits: POINodeExit[];
+  actions: POIRepeatableAction[];
+  questHooks: POIQuestHook[];
+}
+
+export interface PointOfInterest {
+  id: string;
+  name: string;
+  description: string;
+  entryNodeId: string;
+  nodes: Record<string, POINode>;
+  hidden?: boolean;
+  minTrekTotal?: number;
+  discoveryLog?: string;
+}
+
+export interface Region {
+  id: string;
+  name: string;
+  description: string;
+  biome: 'forest' | 'plains' | 'mountains' | 'ocean' | 'swamp' | 'desert';
+  adjacentRegionIds: string[];
+  encounterTable: MobTableEntry[];
+  dangerLevel: number;
+  pointsOfInterest: PointOfInterest[];
+  accessibleViews?: ('forest' | 'mining' | 'crafting')[];
+}
+</file>
+
+<file path="src/components/index.ts">
+// src/components/index.ts
+
+// Layout
+export * from './layout/HudBar';
+export * from './layout/ModeNavBar';
+
+// Overlays
+export * from './overlays/CharacterSheetDrawer';
+export * from './overlays/OptionsDrawer';
+export * from './overlays/MaterialSwapModal';
+
+// Views
+export * from './views/CombatView';
+export * from './views/ForestView';
+export * from './views/MiningView';
+export * from './views/CraftingView';
+export * from './views/NarrativeView';
+export * from './views/WorldMapView';
+export * from './views/PoiNodeView';
+
+// UI Primitives & Widgets
+export * from './ui/Icon';
+export * from './ui/PixelFrame';
+export * from './ui/PixelDie';
+export * from './ui/DiceTray';
+export * from './ui/HealthPool';
+export * from './ui/MaterialCard';
+export * from './ui/RecipeCard';
+export * from './ui/StatBadge';
+export * from './ui/StatField';
+export * from './ui/StatusBar';
+export * from './ui/CombatLogStream';
+export * from './ui/DiceRoller';
+
+export * from './editor/ExpressionEditor';
+export * from './editor/ActionNodeEditor';
+export * from './editor/MobEditor';
+export * from './editor/MobManagerModal';
+</file>
+
+<file path="src/types/controller.ts">
+import type { Character } from '../models/Character';
+import type { ActiveView, GameModeId } from './game';
+import type { Passage } from './narrative';
+import type { TrackedMaterial } from './inventory';
+import type { Region } from './world';
+import { GameStore } from '../models/GameStore';
+import { MobConfig } from '../models/Mob';
+
+export interface ReturnBannerDescriptor {
+  label: string;
+  action: () => void;
+}
+
+export interface CombatTriggerPayload {
+  mobName: string;
+  victoryPassageId?: string;
+  defeatPassageId?: string;
+}
+
+export interface EngineContext {
+  hero: Character;
+  game: GameStore;
+  passages: Record<string, Passage>;
+  regions: Record<string, Region>;
+  mobs: Record<string, MobConfig>; // <-- Add this
+  saveState: () => void;
+  setActiveView: (view: ActiveView) => void;
+  setPendingMaterial: (mat: TrackedMaterial | null) => void;
+}
+
+export interface GameModeController {
+  readonly id: GameModeId;
+  readonly label: string;
+  readonly defaultView: ActiveView;
+  readonly allowInventoryEditing: boolean;
+
+  getAccessibleViews(ctx: EngineContext): ActiveView[];
+  canNavigateToView(targetView: ActiveView, ctx: EngineContext): boolean;
+  getReturnBanner(ctx: EngineContext): ReturnBannerDescriptor | null;
+
+  onActivityCleared?(type: 'forest' | 'mining', ctx: EngineContext): void;
+  initiateCombat(payload: CombatTriggerPayload, ctx: EngineContext): void;
+  resolveCombatExit(
+    outcome: 'victory' | 'defeat',
+    ctx: EngineContext,
+    runtimeContext?: Record<string, any>
+  ): void;
+
+  handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void;
+  handleHeroDefeated(ctx: EngineContext): void;
+}
+</file>
+
+<file path="src/models/Mob.ts">
+import { Entity, EntityConfig } from './Entity';
+import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
+import { Action, CombatBehaviorAst } from '../types/ast';
+import { AstInterpreter } from '../engine/astInterpreter';
+
+interface MobData {
+  id: string;
+  damage: number;
+  defense: number;
+  rulesText?: string;
+  lootText?: string;
+  behavior?: CombatBehaviorAst;
+  loot?: Action[];
+  state?: Record<string, boolean | number | string>;
+}
+
+export type MobConfig = EntityConfig & MobData
+
+export class Mob extends Entity implements Required<CombatLifecycleHooks> {
+  #data: MobData;
+  #hooks: CombatLifecycleHooks;
+
+  constructor({ id, damage, defense, rulesText, lootText, behavior, loot, state, ...config }: MobConfig) {
+    // 1. Initialize Entity vitals
+    super(config);
+
+    // 2. Reactive store for mutable combat state
+    this.#data = this.createReactiveStore({
+      id,
+      damage,
+      defense,
+      rulesText,
+      lootText,
+      behavior,
+      loot,
+      state
+    });
+
+    this.#hooks = this.#compileHooks(behavior || {});
+  }
+
+  #createHookHandler(ast: Action[]) {
+    return (ctx: CombatContext) => {
+      const scope = {
+        self: this,
+        mob: this,
+        hero: ctx.combatState?.hero,
+        round: ctx.roundState,
+        combat: ctx.combatState,
+      };
+
+      return AstInterpreter.execute(ast, scope);
+    }
+  }
+
+  #compileHooks(behavior: CombatBehaviorAst): CombatLifecycleHooks {
+    const entries = Object.entries(behavior) as [keyof CombatLifecycleHooks, Action[]][];
+
+    return entries.reduce<CombatLifecycleHooks>((acc, [hookName, astTree]) => {
+      if (Array.isArray(astTree) && astTree.length > 0) {
+        acc[hookName] = this.#createHookHandler(astTree);
+      }
+      return acc;
+    }, {});
+  }
+
+  // --- Entity Abstract Implementation ---
+  public override get armor(): number { return this.#data.defense; }
+
+  // --- Accessors ---
+  public get damage(): number { return this.#data.damage; }
+  public set damage(val: number) { this.#data.damage = val; }
+
+  public get defense(): number { return this.#data.defense; }
+  public set defense(val: number) { this.#data.defense = Math.max(0, val); }
+
+  public get rulesText(): string { return this.#data.rulesText || 'Standard encounter.'; }
+  public set rulesText(val: string) { this.#data.rulesText = val; }
+
+  public get lootText(): string { return this.#data.lootText || 'None.'; }
+  public set lootText(val: string) { this.#data.lootText = val; }
+
+  public get behavior(): CombatBehaviorAst | undefined { return this.#data.behavior; }
+  public set behavior(val: CombatBehaviorAst | undefined) { this.#data.behavior = val; }
+
+  public get state(): Record<string, any> { return this.#data.state || {}; }
+
+  // --- Loot Handler ---
+  public onLootRoll(roll: number, hero?: any): string {
+    if (this.#data.loot && this.#data.loot.length > 0) {
+      const scope = {
+        roll,
+        hero,
+        mob: this,
+        self: this,
+      };
+      const returns = AstInterpreter.execute(this.#data.loot, scope);
+      if (returns.reward) return returns.reward;
+    }
+    return 'No loot';
+  }
+
+  // --- Combat Lifecycle Hooks ---
+  public onCombatStart(ctx: CombatContext): void { this.#hooks.onCombatStart?.(ctx); }
+  public onRoundStart(ctx: CombatContext): void { this.#hooks.onRoundStart?.(ctx); }
+  public onRollEvaluated(ctx: CombatContext): void { this.#hooks.onRollEvaluated?.(ctx); }
+  public onDealDamage(ctx: CombatContext): void { this.#hooks.onDealDamage?.(ctx); }
+  public onReceiveDamage(ctx: CombatContext): void { this.#hooks.onReceiveDamage?.(ctx); }
+  public onRoundEnd(ctx: CombatContext): void { this.#hooks.onRoundEnd?.(ctx); }
+  public onDeath(ctx: CombatContext): void { this.#hooks.onDeath?.(ctx); }
+  public onCombatEnd(ctx: CombatContext): void { this.#hooks.onCombatEnd?.(ctx); }
+
+  // --- Serialization ---
+  public override toJSON(): MobConfig {
+    const { id, damage, defense, rulesText, lootText, behavior, loot, state } = this.#data
+
+
+    return {
+      ...super.toJSON(),
+      id,
+      damage,
+      defense,
+      rulesText,
+      loot,
+      state,
+      lootText,
+      behavior
+    };
+  }
+}
+</file>
+
+<file path="src/models/Character.ts">
+import { Entity, EntityConfig } from './Entity';
+import { getEquipmentItem } from '../data/recipes';
+import type { Item } from './Item';
+import type { TrackedMaterial, EquippedSlots, InventoryRule } from '../types/inventory';
+import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
+
+interface CharacterData {
+  restarts: number;
+  materialRule: InventoryRule;
+  equipmentInventoryIds: string[];
+  equipped: EquippedSlots;
+  materials: Record<TrackedMaterial, number>;
+}
+
+export type CharacterConfig = EntityConfig & CharacterData;
+
+const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
+  Wood: 0,
+  Stone: 0,
+  Iron: 0,
+  Coal: 0,
+  Diamond: 0,
+  Leather: 0,
+  String: 0,
+  Wheat: 0,
+  Gunpowder: 0,
+  Slimeball: 0,
+  Fish: 0,
+};
+
+export class Character extends Entity implements CombatLifecycleHooks {
+  #data: CharacterData;
+
+  constructor({restarts, materialRule, equipmentInventoryIds, equipped, materials, ...entityConfig}: Partial<CharacterConfig> = {}) {
+    const json = Object.assign({name: 'Steve', maxHearts: 20}, entityConfig);
+    super(json);
+
+    this.#data = this.createReactiveStore({
+      restarts: Math.max(0, restarts ?? 0),
+      materialRule: materialRule || 'total',
+      equipmentInventoryIds: equipmentInventoryIds
+        ? [...equipmentInventoryIds]
+        : ['Wooden Pickaxe'],
+      equipped: {
+        weapon: equipped?.weapon ?? null,
+        armor: equipped?.armor ?? null,
+        pickaxe: equipped?.pickaxe ?? 'Wooden Pickaxe',
+        key: equipped?.key ?? null,
+      },
+      materials: {
+        ...DEFAULT_MATERIALS,
+        ...(materials || {}),
+      },
+    });
+  }
+
+  // --- Subclass Accessors ---
+  public get restarts(): number {
+    return this.#data.restarts;
+  }
+  public set restarts(val: number) {
+    this.#data.restarts = Math.max(0, val);
+  }
+
+  public get materialRule(): InventoryRule {
+    return this.#data.materialRule;
+  }
+  public set materialRule(val: InventoryRule) {
+    this.#data.materialRule = val;
+  }
+
+  public get equipmentInventoryIds(): string[] {
+    return this.#data.equipmentInventoryIds;
+  }
+
+  public get equipmentInventory(): Item[] {
+    return this.#data.equipmentInventoryIds
+      .map((name) => getEquipmentItem(name))
+      .filter((item): item is Item => item !== undefined);
+  }
+
+  public get equipped(): EquippedSlots {
+    return this.#data.equipped;
+  }
+
+  public get materials(): Record<TrackedMaterial, number> {
+    return this.#data.materials;
+  }
+
+  // --- Computed Equipment & Stats ---
+  public get equippedWeapon(): Item | undefined {
+    return this.#data.equipped.weapon ? getEquipmentItem(this.#data.equipped.weapon) : undefined;
+  }
+
+  public get equippedArmor(): Item | undefined {
+    return this.#data.equipped.armor ? getEquipmentItem(this.#data.equipped.armor) : undefined;
+  }
+
+  public get equippedPickaxe(): Item | undefined {
+    return this.#data.equipped.pickaxe ? getEquipmentItem(this.#data.equipped.pickaxe) : undefined;
+  }
+
+  public get equippedKey(): Item | undefined {
+    return this.#data.equipped.key ? getEquipmentItem(this.#data.equipped.key) : undefined;
+  }
+
+  public get attack(): number {
+    return this.equippedWeapon?.attack ?? 1;
+  }
+
+  public get damage(): number {
+    return this.equippedWeapon?.damage ?? 0;
+  }
+
+  public override get armor(): number {
+    return this.equippedArmor?.armorValue ?? 0;
+  }
+
+  public get totalMaterialsCount(): number {
+    return Object.values(this.#data.materials).reduce((sum, qty) => sum + qty, 0);
+  }
+
+  // --- Inventory Management ---
+  public hasItem(itemName: string): boolean {
+    return (
+      this.#data.equipmentInventoryIds.includes(itemName) ||
+      Object.values(this.#data.equipped).includes(itemName)
+    );
+  }
+
+  public canCraft(cost: Partial<Record<TrackedMaterial, number>>): boolean {
+    for (const [mat, required] of Object.entries(cost) as [TrackedMaterial, number][]) {
+      if ((this.#data.materials[mat] || 0) < (required || 0)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  public addEquipment(itemName: string): void {
+    this.#data.equipmentInventoryIds.push(itemName);
+  }
+
+  public removeEquipment(itemName: string): boolean {
+    const idx = this.#data.equipmentInventoryIds.indexOf(itemName);
+    if (idx !== -1) {
+      this.#data.equipmentInventoryIds.splice(idx, 1);
+      return true;
+    }
+
+    for (const [slot, name] of Object.entries(this.#data.equipped)) {
+      if (name === itemName) {
+        this.#data.equipped[slot as keyof EquippedSlots] = null;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public equip(slot: keyof EquippedSlots, itemName: string): boolean {
+    if (!this.#data.equipmentInventoryIds.includes(itemName)) return false;
+
+    const current = this.#data.equipped[slot];
+    if (current) {
+      this.#data.equipmentInventoryIds.push(current);
+    }
+
+    const itemIdx = this.#data.equipmentInventoryIds.indexOf(itemName);
+    this.#data.equipmentInventoryIds.splice(itemIdx, 1);
+    this.#data.equipped[slot] = itemName;
+
+    return true;
+  }
+
+  public unequip(slot: keyof EquippedSlots): void {
+    const current = this.#data.equipped[slot];
+    if (current) {
+      this.#data.equipped[slot] = null;
+      this.#data.equipmentInventoryIds.push(current);
+    }
+  }
+
+  public adjustMaterial(mat: TrackedMaterial, delta: number): number {
+    const current = this.#data.materials[mat] || 0;
+    const next = Math.max(0, current + delta);
+    this.#data.materials[mat] = next;
+    return next - current;
+  }
+
+  public respawn(): void {
+    this.resetHealth();
+    this.restarts += 1;
+  }
+
+  // --- Combat Lifecycle Hook Forwarding ---
+  public onCombatStart(ctx: CombatContext): void { this.#dispatchItemHooks('onCombatStart', ctx); }
+  public onRoundStart(ctx: CombatContext): void { this.#dispatchItemHooks('onRoundStart', ctx); }
+  public onRollEvaluated(ctx: CombatContext): void { this.#dispatchItemHooks('onRollEvaluated', ctx); }
+  public onDealDamage(ctx: CombatContext): void { this.#dispatchItemHooks('onDealDamage', ctx); }
+  public onReceiveDamage(ctx: CombatContext): void { this.#dispatchItemHooks('onReceiveDamage', ctx); }
+  public onRoundEnd(ctx: CombatContext): void { this.#dispatchItemHooks('onRoundEnd', ctx); }
+  public onDeath(ctx: CombatContext): void { this.#dispatchItemHooks('onDeath', ctx); }
+  public onCombatEnd(ctx: CombatContext): void { this.#dispatchItemHooks('onCombatEnd', ctx); }
+
+  #dispatchItemHooks(hook: keyof CombatLifecycleHooks, ctx: CombatContext): void {
+    const items = [
+      this.equippedWeapon,
+      this.equippedArmor,
+      this.equippedPickaxe,
+      this.equippedKey,
+    ];
+    for (const item of items) {
+      item?.hooks?.[hook]?.(ctx);
+    }
+  }
+
+  // --- Serialization ---
+  public override toJSON(): CharacterConfig {
+    return {
+      ...super.toJSON(),
+      restarts: this.restarts,
+      equipmentInventoryIds: [...this.#data.equipmentInventoryIds],
+      equipped: { ...this.#data.equipped },
+      materials: { ...this.#data.materials },
+      materialRule: this.materialRule,
+    };
+  }
+}
+</file>
+
+</files>

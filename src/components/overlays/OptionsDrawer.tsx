@@ -1,11 +1,15 @@
 import { useState } from 'preact/hooks';
-import { Character } from "../../models/Character";
-import { Icon } from "../ui/Icon";
-import { Passage } from '../../types/narrative';
+import type { Character } from '../../models/Character';
+import type { GameModeId } from '../../types/game';
+import type { Passage } from '../../types/narrative';
+import { Icon } from '../ui/Icon';
+import { Region } from '../../types/world';
 
 interface OptionsDrawerProps {
   hero: Character;
   isOpen: boolean;
+  currentMode: GameModeId;
+  onSelectMode: (newMode: GameModeId) => void;
   passages: Record<string, Passage>;
   isCustomStory: boolean;
   onClose: () => void;
@@ -14,11 +18,19 @@ interface OptionsDrawerProps {
   onLoad: (json: string) => boolean;
   onLoadStory: (json: string) => boolean;
   onResetStory: () => void;
+  regions: Record<string, Region>;
+  isCustomWorld: boolean;
+  onLoadWorld: (json: string) => boolean;
+  onResetWorld: () => void;
 }
+
+const STORAGE_KEY = 'minecraft_multimode_rpg_data';
 
 export function OptionsDrawer({
   hero,
   isOpen,
+  currentMode,
+  onSelectMode,
   passages,
   isCustomStory,
   onClose,
@@ -27,11 +39,17 @@ export function OptionsDrawer({
   onLoad,
   onLoadStory,
   onResetStory,
+  regions,
+  isCustomWorld,
+  onLoadWorld,
+  onResetWorld,
 }: OptionsDrawerProps) {
   const [importString, setImportString] = useState('');
   const [statusNotice, setStatusNotice] = useState('');
   const [storyImportString, setStoryImportString] = useState('');
   const [storyNotice, setStoryNotice] = useState('');
+  const [worldImportString, setWorldImportString] = useState('');
+  const [worldNotice, setWorldNotice] = useState('');
 
   const handleCopyStory = async () => {
     try {
@@ -39,6 +57,26 @@ export function OptionsDrawer({
       setStoryNotice('Current story JSON copied to clipboard!');
     } catch {
       setStoryNotice('Failed to copy story to clipboard.');
+    }
+  };
+
+  const handleCopyWorld = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(regions, null, 2));
+      setWorldNotice('Current world JSON copied to clipboard!');
+    } catch {
+      setWorldNotice('Failed to copy world to clipboard.');
+    }
+  };
+
+  const handleApplyWorld = () => {
+    if (!worldImportString.trim()) return;
+    const ok = onLoadWorld(worldImportString);
+    if (ok) {
+      setWorldNotice('Custom world pack loaded successfully!');
+      setWorldImportString('');
+    } else {
+      setWorldNotice('Error: Invalid world pack schema.');
     }
   };
 
@@ -55,7 +93,10 @@ export function OptionsDrawer({
 
   const handleCopySave = async () => {
     try {
-      const dataStr = JSON.stringify(hero.toJSON(), null, 2);
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const dataStr = raw
+        ? JSON.stringify(JSON.parse(raw), null, 2)
+        : JSON.stringify({ character: hero.toJSON() }, null, 2);
       await navigator.clipboard.writeText(dataStr);
       setStatusNotice('Save copied to clipboard!');
     } catch {
@@ -85,34 +126,38 @@ export function OptionsDrawer({
         </button>
       </div>
 
+      {/* Mode Selector */}
       <div class="sidebar-field">
         <label>GAMEPLAY MODE</label>
         <div class="option-radio-group">
           <div
-            class={`option-radio-card ${!hero.narrativeMode ? 'selected' : ''}`}
-            onClick={() => {
-              hero.narrativeMode = false;
-              onUpdate();
-            }}
+            class={`option-radio-card ${currentMode === 'sandbox' ? 'selected' : ''}`}
+            onClick={() => onSelectMode('sandbox')}
           >
             <strong>Sandbox Mode</strong>
             <small>Free navigation between Combat, Forest, Mining, and Crafting.</small>
           </div>
+
           <div
-            class={`option-radio-card ${hero.narrativeMode ? 'selected' : ''}`}
-            onClick={() => {
-              hero.narrativeMode = true;
-              onUpdate();
-            }}
+            class={`option-radio-card ${currentMode === 'narrative' ? 'selected' : ''}`}
+            onClick={() => onSelectMode('narrative')}
           >
             <strong>Narrative Mode</strong>
             <small>Story passages with choices, item requirements, and screen unlocks.</small>
           </div>
+
+          <div
+            class={`option-radio-card ${currentMode === 'open_world' ? 'selected' : ''}`}
+            onClick={() => onSelectMode('open_world')}
+          >
+            <strong>Open World Mode</strong>
+            <small>Wilderness exploration, points of interest, dungeon crawling, and quests.</small>
+          </div>
         </div>
 
-        {/* Narrative Story Pack Loader */}
-        {hero.narrativeMode && (
-          <div class="sidebar-field" style={{ marginBottom: '24px' }}>
+        {/* Narrative Story Pack Loader (Narrative Mode Only) */}
+        {currentMode === 'narrative' && (
+          <div class="sidebar-field" style={{ marginTop: '16px', marginBottom: '24px' }}>
             <label>
               <Icon name="book" /> STORY PACK (JSON)
             </label>
@@ -120,7 +165,6 @@ export function OptionsDrawer({
               Current: <strong>{isCustomStory ? 'Custom Narrative' : 'Built-in Overworld Quest'}</strong> (
               {Object.keys(passages).length} passages)
             </div>
-
             <button
               type="button"
               class="pixel-btn"
@@ -129,7 +173,6 @@ export function OptionsDrawer({
             >
               EXPORT CURRENT STORY JSON
             </button>
-
             <textarea
               class="pixel-input"
               placeholder="Paste custom narrative JSON here..."
@@ -138,7 +181,6 @@ export function OptionsDrawer({
               rows={3}
               style={{ resize: 'vertical', width: '100%', marginBottom: '8px' }}
             />
-
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 type="button"
@@ -158,10 +200,61 @@ export function OptionsDrawer({
                 </button>
               )}
             </div>
-
             {storyNotice && (
               <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--pixel-yellow)' }}>
                 {storyNotice}
+              </div>
+            )}
+          </div>
+        )}
+
+        {currentMode === 'open_world' && (
+          <div class="sidebar-field" style={{ marginTop: '16px', marginBottom: '24px' }}>
+            <label>
+              <Icon name="spark" /> WORLD PACK (JSON)
+            </label>
+            <div style={{ fontSize: '11px', color: '#666', marginBottom: '8px' }}>
+              Current: <strong>{isCustomWorld ? 'Custom World' : 'Built-in Regions'}</strong> (
+              {Object.keys(regions).length} regions)
+            </div>
+            <button
+              type="button"
+              class="pixel-btn"
+              style={{ width: '100%', marginBottom: '8px' }}
+              onClick={handleCopyWorld}
+            >
+              EXPORT CURRENT WORLD JSON
+            </button>
+            <textarea
+              class="pixel-input"
+              placeholder="Paste custom world JSON here..."
+              value={worldImportString}
+              onInput={(e) => setWorldImportString((e.target as HTMLTextAreaElement).value)}
+              rows={3}
+              style={{ resize: 'vertical', width: '100%', marginBottom: '8px' }}
+            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                class="pixel-btn btn-success"
+                style={{ flex: 1 }}
+                onClick={handleApplyWorld}
+              >
+                LOAD WORLD JSON
+              </button>
+              {isCustomWorld && (
+                <button
+                  type="button"
+                  class="pixel-btn btn-danger"
+                  onClick={onResetWorld}
+                >
+                  RESET WORLD
+                </button>
+              )}
+            </div>
+            {worldNotice && (
+              <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--pixel-yellow)' }}>
+                {worldNotice}
               </div>
             )}
           </div>
@@ -200,7 +293,6 @@ export function OptionsDrawer({
         >
           COPY SAVE TO CLIPBOARD
         </button>
-
         <textarea
           class="pixel-input"
           placeholder="Paste save JSON here..."
@@ -217,7 +309,6 @@ export function OptionsDrawer({
         >
           IMPORT SAVE JSON
         </button>
-
         {statusNotice && (
           <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--pixel-yellow)' }}>
             {statusNotice}

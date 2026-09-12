@@ -6,16 +6,20 @@ import { MaterialCard } from '../ui/MaterialCard';
 import { StatBadge } from '../ui/StatBadge';
 import { useState } from 'preact/hooks';
 import { TRACKED_MATERIALS, EQUIPMENT_DEFINITIONS, getEquipmentItem } from '../../data/recipes'; //
+import { useObservable } from '../../hooks/useObservable';
 
 interface CharacterSheetProps {
   hero: Character;
   isOpen: boolean;
+  allowInventoryEditing?: boolean;
   onClose: () => void;
   onUpdate: () => void;
 }
 
-export function CharacterSheetDrawer({ hero, isOpen, onClose, onUpdate }: CharacterSheetProps) {
+export function CharacterSheetDrawer({ hero, isOpen, allowInventoryEditing = false, onClose, onUpdate }: CharacterSheetProps) {
   const [selectedGearToAdd, setSelectedGearToAdd] = useState(EQUIPMENT_DEFINITIONS[0].name);
+
+  useObservable(hero);
 
   const adjustHp = (delta: number) => {
     hero.changeHealth(delta);
@@ -89,7 +93,7 @@ export function CharacterSheetDrawer({ hero, isOpen, onClose, onUpdate }: Charac
           current={hero.hearts}
           max={hero.maxHearts}
           onChange={(val) => {
-            hero.setHealth(val);
+            hero.hearts = val;
             onUpdate();
           }}
         />
@@ -148,23 +152,25 @@ export function CharacterSheetDrawer({ hero, isOpen, onClose, onUpdate }: Charac
         </label>
 
         {/* Manual Equipment Adder */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-          <select
-            class="pixel-select"
-            value={selectedGearToAdd}
-            onChange={(e) => setSelectedGearToAdd((e.target as HTMLSelectElement).value)}
-            style={{ flex: 1 }}
-          >
-            {EQUIPMENT_DEFINITIONS.map((eq) => (
-              <option key={eq.name} value={eq.name}>
-                [{eq.type.toUpperCase()}] {eq.name}
-              </option>
-            ))}
-          </select>
-          <button type="button" class="pixel-btn btn-success" onClick={handleAddManualEquipment}>
-            + ADD
-          </button>
-        </div>
+        {allowInventoryEditing && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <select
+              class="pixel-select"
+              value={selectedGearToAdd}
+              onChange={(e) => setSelectedGearToAdd((e.target as HTMLSelectElement).value)}
+              style={{ flex: 1 }}
+            >
+              {EQUIPMENT_DEFINITIONS.map((eq) => (
+                <option key={eq.name} value={eq.name}>
+                  [{eq.type.toUpperCase()}] {eq.name}
+                </option>
+              ))}
+            </select>
+            <button type="button" class="pixel-btn btn-success" onClick={handleAddManualEquipment}>
+              + ADD
+            </button>
+          </div>
+        )}
 
         {/* Existing Inventory List */}
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>

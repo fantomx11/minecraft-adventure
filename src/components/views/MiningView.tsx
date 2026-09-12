@@ -8,25 +8,25 @@ import { DieItem } from '../../types/dice';
 
 interface MiningViewProps {
   hero: Character;
+  mineCleared: number;
   onUpdate: () => void;
   onGainMaterial: (mat: TrackedMaterial, amount?: number) => void;
   onNavigateCombat: (mobName: string) => void;
+  onMineCleared: () => void;
 }
 
-export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat }: MiningViewProps) {
-  const [depthBonus, setDepthBonus] = useState(0);
+export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat, onMineCleared, mineCleared }: MiningViewProps) {
+  const [mineBonus, setMineBonus] = useState(0);
   const [message, setMessage] = useState('Standing at the cavern entrance.');
-  const [mineCount, setMineCount] = useState(0);
 
   const pickaxe = hero.equippedPickaxe;
   const pickaxeDice = pickaxe?.diceBonus || 1;
 
   const handleSurface = () => {
-    if (depthBonus > 0 || mineCount > 0) {
-      hero.mineCleared += 1;
-      setDepthBonus(0);
-      setMineCount(0);
-      setMessage('Returned safely to the surface (+1 Mine Clear). Depth and mining bonus reset.');
+    if (mineBonus > 0) {
+      onMineCleared();
+      setMineBonus(0);
+      setMessage('Returned safely to the surface (+1 Mine Clear). Consecutive roll bonus reset.');
       onUpdate();
     } else {
       setMessage('Already resting at the surface entrance.');
@@ -34,16 +34,12 @@ export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat }:
   };
 
   const handleRollPreview = (rolls: number[]): DieItem[] => {
-    console.log("New Roll!");
     return rolls.map((roll) => {
-      const total = roll + mineCount;
-
-      console.log("Roll total: " + total);
-
+      const total = roll + mineBonus;
       if (total <= 2) return { value: roll, tag: 'STONE', variant: 'neutral' };
       if (total <= 4) return { value: roll, tag: 'COAL', variant: 'hit' };
       if (total <= 6) return { value: roll, tag: 'IRON', variant: 'bonus' };
-      return { value: roll, tag: 'FALL!', variant: 'miss' };
+      return { value: roll, tag: 'CAVE-IN (7+)', variant: 'miss' };
     });
   };
 
@@ -54,26 +50,24 @@ export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat }:
   ): DieItem[] => {
     const chosenIndex = selectedIndices[0];
     const chosenRoll = rolls[chosenIndex];
-    const total = chosenRoll + mineCount;
+    const total = chosenRoll + mineBonus;
 
     if (total <= 2) {
       onGainMaterial('Stone', 1);
-      setMessage(`Mined (Roll ${chosenRoll} + Bonus ${mineCount} = ${total}): Chipped 1 Stone.`);
+      setMessage(`Mined (Roll ${chosenRoll} + Bonus ${mineBonus} = ${total}): Chipped 1 Stone.`);
     } else if (total <= 4) {
       onGainMaterial('Coal', 1);
-      setMessage(`Mined (Roll ${chosenRoll} + Bonus ${mineCount} = ${total}): Found 1 Coal deposit.`);
+      setMessage(`Mined (Roll ${chosenRoll} + Bonus ${mineBonus} = ${total}): Found 1 Coal deposit.`);
     } else if (total <= 6) {
       onGainMaterial('Iron', 1);
-      setMessage(`Mined (Roll ${chosenRoll} + Bonus ${mineCount} = ${total}): Extracted 1 Iron ore.`);
+      setMessage(`Mined (Roll ${chosenRoll} + Bonus ${mineBonus} = ${total}): Extracted 1 Iron ore.`);
     } else {
-      setDepthBonus((prev) => prev + 1);
-      setMessage(`Mined (Roll ${chosenRoll} + Bonus ${mineCount} = ${total}): Ground caved in! Fell deeper into the shaft (+1 Depth).`);
+      setMessage(`Mined (Roll ${chosenRoll} + Bonus ${mineBonus} = ${total}): Shaft collapsed into the depths!`);
     }
 
-    setMineCount((prev) => prev + 1);
+    setMineBonus((prev) => prev + 1);
     onUpdate();
 
-    // Return the dice with the chosen one highlighted and unpicked ones marked
     return labeledDice.map((die, i) => ({
       ...die,
       tag: i === chosenIndex ? die.tag : 'IGNORED',
@@ -89,8 +83,7 @@ export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat }:
       setMessage(`A skittering hiss echoes in the dark! Encountered a ${target}!`);
       onNavigateCombat(target);
     } else {
-      setDepthBonus((d) => d + 1);
-      setMessage('Ventured deeper into the lower caverns (+1 Depth Bonus). Richer ore ahead!');
+      setMessage('Ventured deeper into the lower caverns. The rocks rumble around you.');
     }
   };
 
@@ -98,9 +91,9 @@ export function MiningView({ hero, onUpdate, onGainMaterial, onNavigateCombat }:
     <section class="view-panel active">
       <PixelFrame title="MINING EXPEDITION" icon="pickaxe">
         <p style={{ fontSize: '13px', lineHeight: '1.8' }}>
-          Pickaxe: <strong>{pickaxe?.name || 'Bare Hands'}</strong> | Depth Bonus:{' '}
-          <strong>+{depthBonus}</strong> | Mine Expeditions Cleared:{' '}
-          <strong>{hero.mineCleared}</strong>
+          Pickaxe: <strong>{pickaxe?.name || 'Bare Hands'}</strong> | Mine Bonus:{' '}
+          <strong>+{mineBonus}</strong> | Mine Expeditions Cleared:{' '}
+          <strong>{mineCleared}</strong>
         </p>
 
         <div class="mode-actions-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>

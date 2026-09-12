@@ -1,39 +1,57 @@
+import { Observable } from './Observable';
 import type { DamageInstance, DamageResult, CombatContext } from '../types/combat';
 
-export abstract class Entity {
-  public name: string;
-  public maxHearts: number;
-  public hearts: number;
-  public armor: number = 0;
+export interface EntityConfig {
+  name: string;
+  maxHearts: number;
+  hearts?: number;
+}
 
-  constructor(name: string, maxHearts: number, hearts?: number) {
-    this.name = name;
-    this.maxHearts = maxHearts;
-    this.hearts = hearts ?? maxHearts;
+export abstract class Entity extends Observable {
+  #data: EntityConfig;
+
+  constructor({ name, maxHearts, hearts }: EntityConfig) {
+    super();
+    this.#data = this.createReactiveStore({
+      name,
+      maxHearts,
+      hearts: hearts ?? maxHearts,
+    });
   }
 
-  public setHealth(val: number): void {
-    this.hearts = Math.min(this.maxHearts, Math.max(0, val));
-  }
+  abstract readonly armor: number;
 
-  public changeHealth(delta: number): void {
-    this.setHealth(this.hearts + delta);
-  }
+  // --- Core Accessors ---
+  public get name(): string { return this.#data.name; }
+  public set name(val: string) { this.#data.name = val; }
 
-  public resetHealth(): void {
-    this.hearts = this.maxHearts;
-  }
+  public get maxHearts(): number { return this.#data.maxHearts; }
+  public set maxHearts(val: number) { this.#data.maxHearts = Math.max(1, val); }
 
-  public takeDamage(instances: DamageInstance[], ctx: CombatContext): DamageResult {
+  public get hearts(): number { return this.#data.hearts ?? this.maxHearts; }
+  public set hearts(val: number) { this.#data.hearts = Math.max(0, Math.min(this.#data.maxHearts, val)); }
+
+  public get isDead(): boolean { return this.hearts <= 0; }
+
+  public get isAlive(): boolean { return !this.isDead; }
+
+  public isDefeated(): boolean { return this.isDead; }
+
+  // --- Domain Logic ---
+  public changeHealth(delta: number): void { this.hearts += delta; }
+
+  public resetHealth(): void { this.hearts = this.maxHearts; }
+
+  public takeDamage(instances: DamageInstance[], ctx?: CombatContext): DamageResult {
     let appliedTotal = 0;
     const details: string[] = [];
 
     for (const inst of instances) {
       let amt = inst.amount;
-      if (inst.appliesArmor && this.armor > 0 && !ctx.combatState.ignoreArmor) {
+      if (inst.appliesArmor && this.armor > 0 && !ctx?.combatState?.ignoreArmor) {
         amt = Math.max(0, amt - this.armor);
       }
-      this.hearts = Math.max(0, this.hearts - amt);
+      this.hearts -= amt;
       appliedTotal += amt;
       details.push(`${inst.source}: ${amt} DMG`);
     }
@@ -41,7 +59,11 @@ export abstract class Entity {
     return { appliedTotal, details };
   }
 
-  public isDefeated(): boolean {
-    return this.hearts <= 0;
+  public toJSON(): EntityConfig {
+    return {
+      name: this.name,
+      hearts: this.hearts,
+      maxHearts: this.maxHearts,
+    };
   }
 }

@@ -2,6 +2,8 @@ import { PixelFrame } from '../ui/PixelFrame';
 import { IconName, ICONS } from '../../data/icons';
 import { Passage, PassageChoice } from '../../types/narrative';
 import { ChoiceEditor } from './ChoiceEditor';
+import { ActionListEditor } from './ActionNodeEditor';
+import { Action } from '../../types/ast';
 
 interface PassageFormProps {
   passage: Passage;
@@ -42,7 +44,6 @@ export function PassageForm({
         </button>
       </div>
 
-      {/* ID, Title, Icon */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 120px', gap: '12px', marginBottom: '16px' }}>
         <div>
           <label class="narrative-section-tag">PASSAGE ID</label>
@@ -71,15 +72,12 @@ export function PassageForm({
           >
             <option value="">-- None --</option>
             {availableIcons.map((ic) => (
-              <option key={ic} value={ic}>
-                {ic}
-              </option>
+              <option key={ic} value={ic}>{ic}</option>
             ))}
           </select>
         </div>
       </div>
 
-      {/* Story Prose */}
       <div style={{ marginBottom: '16px' }}>
         <label class="narrative-section-tag">PASSAGE PROSE</label>
         <textarea
@@ -88,6 +86,14 @@ export function PassageForm({
           value={passage.text}
           onInput={(e) => onUpdatePassage('text', (e.target as HTMLTextAreaElement).value)}
           style={{ resize: 'vertical' }}
+        />
+      </div>
+
+      {/* On-Enter Mutations */}
+      <div style={{ marginBottom: '16px' }}>
+        <ActionListEditor
+          actions={passage.onEnterMutations || []}
+          onChange={(mutations: Action[]) => onUpdatePassage('onEnterMutations', mutations)}
         />
       </div>
 

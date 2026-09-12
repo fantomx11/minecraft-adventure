@@ -1,7 +1,8 @@
-// src/components/editor/ChoiceEditor.tsx
 import { BESTIARY } from '../../data/bestiary';
-import { EQUIPMENT_DEFINITIONS } from '../../data/recipes';
+import { Expr, Action } from '../../types/ast';
 import { PassageChoice } from '../../types/narrative';
+import { ActionListEditor } from './ActionNodeEditor';
+import { ExpressionEditor } from './ExpressionEditor';
 
 interface ChoiceEditorProps {
   index: number;
@@ -74,80 +75,86 @@ export function ChoiceEditor({
         </div>
       </div>
 
-      {/* Item Requirements */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+      {/* Lock Feedback & Display Behavior */}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
         <div>
-          <label style={{ fontSize: '10px' }}>REQUIRES ITEM</label>
+          <label style={{ fontSize: '10px' }}>LOCKED REASON BADGE</label>
+          <input
+            type="text"
+            class="pixel-input"
+            placeholder="e.g. Requires Golden Key"
+            value={choice.lockedReason || ''}
+            onInput={(e) => onChange({ lockedReason: (e.target as HTMLInputElement).value || undefined })}
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: '10px' }}>LOCKED BEHAVIOR</label>
           <select
             class="pixel-select"
-            value={choice.requiresItem || ''}
-            onChange={(e) =>
-              onChange({ requiresItem: (e.target as HTMLSelectElement).value || undefined })
-            }
+            value={choice.behavior || 'disable'}
+            onChange={(e) => onChange({ behavior: (e.target as HTMLSelectElement).value as any })}
           >
-            <option value="">-- None --</option>
-            {EQUIPMENT_DEFINITIONS.map((eq) => (
-              <option key={eq.name} value={eq.name}>
-                {eq.name}
-              </option>
-            ))}
+            <option value="disable">Disable Button</option>
+            <option value="hide">Hide Completely</option>
           </select>
         </div>
-
-        {choice.type === 'combat' && (
-          <>
-            <div>
-              <label style={{ fontSize: '10px' }}>TRIGGER MOB</label>
-              <select
-                class="pixel-select"
-                value={choice.mob || BESTIARY[0].name}
-                onChange={(e) => onChange({ mob: (e.target as HTMLSelectElement).value })}
-              >
-                {BESTIARY.map((b) => (
-                  <option key={b.name} value={b.name}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: '10px' }}>SUCCESS PASSAGE (VICTORY)</label>
-              <select
-                class="pixel-select"
-                value={choice.onVictoryPassageId || choice.targetPassageId || ''}
-                onChange={(e) => {
-                  const val = (e.target as HTMLSelectElement).value;
-                  onChange({ onVictoryPassageId: val, targetPassageId: val });
-                }}
-              >
-                <option value="">-- Select Victory Node --</option>
-                {availablePassageIds.map((pId) => (
-                  <option key={pId} value={pId}>
-                    {pId}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: '10px' }}>FAILURE PASSAGE (DEFEAT)</label>
-              <select
-                class="pixel-select"
-                value={choice.onDefeatPassageId || ''}
-                onChange={(e) =>
-                  onChange({ onDefeatPassageId: (e.target as HTMLSelectElement).value || undefined })
-                }
-              >
-                <option value="">-- Select Defeat Node --</option>
-                {availablePassageIds.map((pId) => (
-                  <option key={pId} value={pId}>
-                    {pId}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </>
-        )}
       </div>
+
+      {choice.type === 'combat' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+          <div>
+            <label style={{ fontSize: '10px' }}>TRIGGER MOB</label>
+            <select
+              class="pixel-select"
+              value={choice.mob || BESTIARY[0].name}
+              onChange={(e) => onChange({ mob: (e.target as HTMLSelectElement).value })}
+            >
+              {BESTIARY.map((b) => (
+                <option key={b.name} value={b.name}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: '10px' }}>VICTORY PASSAGE</label>
+            <select
+              class="pixel-select"
+              value={choice.onVictoryPassageId || ''}
+              onChange={(e) => onChange({ onVictoryPassageId: (e.target as HTMLSelectElement).value || undefined })}
+            >
+              <option value="">-- Victory Node --</option>
+              {availablePassageIds.map((pId) => (
+                <option key={pId} value={pId}>{pId}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: '10px' }}>DEFEAT PASSAGE</label>
+            <select
+              class="pixel-select"
+              value={choice.onDefeatPassageId || ''}
+              onChange={(e) => onChange({ onDefeatPassageId: (e.target as HTMLSelectElement).value || undefined })}
+            >
+              <option value="">-- Defeat Node --</option>
+              {availablePassageIds.map((pId) => (
+                <option key={pId} value={pId}>{pId}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Conditions and Mutations Plugs */}
+      <ExpressionEditor
+        expr={choice.condition ?? { type: 'literal', value: true }}
+        onChange={(expr: Expr) => onChange({ condition: expr })}
+      />
+
+      <ActionListEditor
+        actions={choice.mutations ?? []}
+        onChange={(mutations: Action[]) => onChange({ mutations })}
+      />
     </div>
   );
 }

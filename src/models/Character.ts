@@ -1,206 +1,228 @@
-import { Entity } from './Entity';
+import { Entity, EntityConfig } from './Entity';
 import { getEquipmentItem } from '../data/recipes';
 import type { Item } from './Item';
 import type { TrackedMaterial, EquippedSlots, InventoryRule } from '../types/inventory';
 import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
 
-export interface SerializedCharacter {
-  name: string;
-  health: number;
+interface CharacterData {
   restarts: number;
+  materialRule: InventoryRule;
   equipmentInventoryIds: string[];
   equipped: EquippedSlots;
   materials: Record<TrackedMaterial, number>;
-  materialRule: InventoryRule;
-  forestCleared: number;
-  mineCleared: number;
-  narrativeMode?: boolean;
-  currentPassageId?: string;
-  visitedPassages?: string[];
 }
 
-export class Character extends Entity implements Required<CombatLifecycleHooks> {
-public attack: number = 1;
-  public damage: number = 1;
-  public restarts: number = 0;
-  public equipmentInventoryIds: string[] = [];
-  public equipped: EquippedSlots;
-  public materials: Record<TrackedMaterial, number>;
-  public materialRule: InventoryRule;
-  public forestCleared: number = 0;
-  public mineCleared: number = 0;
-  public narrativeMode: boolean = false;
-  public currentPassageId: string = 'start';
-  public visitedPassages: string[] = [];
+export type CharacterConfig = EntityConfig & CharacterData;
 
-  constructor(data?: Partial<SerializedCharacter>) {
-    super(data?.name || 'Steve', 20, data?.health ?? 20);
-    this.restarts = Math.max(0, data?.restarts ?? 0);
-    this.materialRule = data?.materialRule || 'total';
-    this.forestCleared = data?.forestCleared ?? 0;
-    this.mineCleared = data?.mineCleared ?? 0;
-    this.narrativeMode = data?.narrativeMode ?? false;
-    this.currentPassageId = data?.currentPassageId || 'start';
-    this.visitedPassages = data?.visitedPassages ? [...data.visitedPassages] : [];
-    this.equipmentInventoryIds = data?.equipmentInventoryIds ?? ['Wooden Pickaxe'];
-    this.equipped = {
-      weapon: data?.equipped?.weapon ?? null,
-      armor: data?.equipped?.armor ?? null,
-      pickaxe: data?.equipped?.pickaxe ?? 'Wooden Pickaxe',
-      key: data?.equipped?.key ?? null,
-    };
-    const trackedList: TrackedMaterial[] = [
-      'Wood', 'Stone', 'Iron', 'Coal', 'Diamond',
-      'Leather', 'String', 'Wheat', 'Gunpowder', 'Slimeball', 'Fish'
-    ];
-    this.materials = {} as Record<TrackedMaterial, number>;
-    for (const mat of trackedList) {
-      this.materials[mat] = Math.max(0, data?.materials?.[mat] ?? 0);
-    }
-    this.recalculateStats();
+const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
+  Wood: 0,
+  Stone: 0,
+  Iron: 0,
+  Coal: 0,
+  Diamond: 0,
+  Leather: 0,
+  String: 0,
+  Wheat: 0,
+  Gunpowder: 0,
+  Slimeball: 0,
+  Fish: 0,
+};
+
+export class Character extends Entity implements CombatLifecycleHooks {
+  #data: CharacterData;
+
+  constructor({restarts, materialRule, equipmentInventoryIds, equipped, materials, ...entityConfig}: Partial<CharacterConfig> = {}) {
+    const json = Object.assign({name: 'Steve', maxHearts: 20}, entityConfig);
+    super(json);
+
+    this.#data = this.createReactiveStore({
+      restarts: Math.max(0, restarts ?? 0),
+      materialRule: materialRule || 'total',
+      equipmentInventoryIds: equipmentInventoryIds
+        ? [...equipmentInventoryIds]
+        : ['Wooden Pickaxe'],
+      equipped: {
+        weapon: equipped?.weapon ?? null,
+        armor: equipped?.armor ?? null,
+        pickaxe: equipped?.pickaxe ?? 'Wooden Pickaxe',
+        key: equipped?.key ?? null,
+      },
+      materials: {
+        ...DEFAULT_MATERIALS,
+        ...(materials || {}),
+      },
+    });
   }
 
-  // --- Flyweight Helper Accessors ---
+  // --- Subclass Accessors ---
+  public get restarts(): number {
+    return this.#data.restarts;
+  }
+  public set restarts(val: number) {
+    this.#data.restarts = Math.max(0, val);
+  }
+
+  public get materialRule(): InventoryRule {
+    return this.#data.materialRule;
+  }
+  public set materialRule(val: InventoryRule) {
+    this.#data.materialRule = val;
+  }
+
+  public get equipmentInventoryIds(): string[] {
+    return this.#data.equipmentInventoryIds;
+  }
 
   public get equipmentInventory(): Item[] {
-    return this.equipmentInventoryIds.map(id => getEquipmentItem(id)).filter((i): i is Item => i !== undefined);
+    return this.#data.equipmentInventoryIds
+      .map((name) => getEquipmentItem(name))
+      .filter((item): item is Item => item !== undefined);
   }
 
+  public get equipped(): EquippedSlots {
+    return this.#data.equipped;
+  }
+
+  public get materials(): Record<TrackedMaterial, number> {
+    return this.#data.materials;
+  }
+
+  // --- Computed Equipment & Stats ---
   public get equippedWeapon(): Item | undefined {
-    return this.equipped.weapon ? getEquipmentItem(this.equipped.weapon) : undefined;
+    return this.#data.equipped.weapon ? getEquipmentItem(this.#data.equipped.weapon) : undefined;
   }
 
   public get equippedArmor(): Item | undefined {
-    return this.equipped.armor ? getEquipmentItem(this.equipped.armor) : undefined;
-  }
-
-  public get totalMaterialsCount(): number {
-    return Object.values(this.materials).reduce((total, value) => total + value, 0)
+    return this.#data.equipped.armor ? getEquipmentItem(this.#data.equipped.armor) : undefined;
   }
 
   public get equippedPickaxe(): Item | undefined {
-    return this.equipped.pickaxe ? getEquipmentItem(this.equipped.pickaxe) : undefined;
+    return this.#data.equipped.pickaxe ? getEquipmentItem(this.#data.equipped.pickaxe) : undefined;
   }
 
   public get equippedKey(): Item | undefined {
-    return this.equipped.key ? getEquipmentItem(this.equipped.key) : undefined;
+    return this.#data.equipped.key ? getEquipmentItem(this.#data.equipped.key) : undefined;
   }
 
-  public get equippedItems(): Item[] {
-    const slots = [this.equippedWeapon, this.equippedArmor, this.equippedPickaxe, this.equippedKey];
-    return slots.filter((item): item is Item => item !== undefined);
+  public get attack(): number {
+    return this.equippedWeapon?.attack ?? 1;
   }
 
-  // --- Hook Delegation ---
-
-  private dispatchToEquipped(hookName: keyof CombatLifecycleHooks, ctx: CombatContext): void {
-    for (const item of this.equippedItems) {
-      item.hooks?.[hookName]?.(ctx);
-    }
+  public get damage(): number {
+    return this.equippedWeapon?.damage ?? 0;
   }
 
-  public onCombatStart(ctx: CombatContext): void { this.dispatchToEquipped('onCombatStart', ctx); }
-  public onRoundStart(ctx: CombatContext): void { this.dispatchToEquipped('onRoundStart', ctx); }
-  public onRollEvaluated(ctx: CombatContext): void { this.dispatchToEquipped('onRollEvaluated', ctx); }
-  public onDealDamage(ctx: CombatContext): void { this.dispatchToEquipped('onDealDamage', ctx); }
-  public onReceiveDamage(ctx: CombatContext): void { this.dispatchToEquipped('onReceiveDamage', ctx); }
-  public onRoundEnd(ctx: CombatContext): void { this.dispatchToEquipped('onRoundEnd', ctx); }
-  public onDeath(ctx: CombatContext): void { this.dispatchToEquipped('onDeath', ctx); }
-  public onCombatEnd(ctx: CombatContext): void { this.resetHealth(); this.dispatchToEquipped('onCombatEnd', ctx); }
-
-  // --- Stat Recalculation & State Management ---
-
-  public recalculateStats(): void {
-    const weapon = this.equippedWeapon;
-    this.attack = weapon?.attack ?? 1;
-    this.damage = weapon?.damage ?? 1;
-
-    const armor = this.equippedArmor;
-    this.armor = armor?.armorValue ?? 0;
+  public override get armor(): number {
+    return this.equippedArmor?.armorValue ?? 0;
   }
 
-  public equip(slot: keyof EquippedSlots, itemName: string): boolean {
-    if (!this.hasItem(itemName)) return false;
-    this.equipped[slot] = itemName;
-    this.recalculateStats();
-    return true;
+  public get totalMaterialsCount(): number {
+    return Object.values(this.#data.materials).reduce((sum, qty) => sum + qty, 0);
   }
 
-  public unequip(slot: keyof EquippedSlots): void {
-    this.equipped[slot] = null;
-    this.recalculateStats();
-  }
-
-  public hasItem(name: string): boolean {
-    return this.equipmentInventoryIds.some((i) => i.toLowerCase() === name.toLowerCase());
-  }
-
-  public addEquipment(name: string): void {
-    this.equipmentInventoryIds.push(name);
-  }
-
-  public removeEquipment(name: string): void {
-    const idx = this.equipmentInventoryIds.findIndex((i) => i.toLowerCase() === name.toLowerCase());
-    if (idx !== -1) {
-      this.equipmentInventoryIds.splice(idx, 1);
-      (Object.keys(this.equipped) as (keyof EquippedSlots)[]).forEach((slot) => {
-        if (this.equipped[slot]?.toLowerCase() === name.toLowerCase()) {
-          this.equipped[slot] = null;
-        }
-      });
-      this.recalculateStats();
-    }
+  // --- Inventory Management ---
+  public hasItem(itemName: string): boolean {
+    return (
+      this.#data.equipmentInventoryIds.includes(itemName) ||
+      Object.values(this.#data.equipped).includes(itemName)
+    );
   }
 
   public canCraft(cost: Partial<Record<TrackedMaterial, number>>): boolean {
     for (const [mat, required] of Object.entries(cost) as [TrackedMaterial, number][]) {
-      if ((this.materials[mat] || 0) < required) {
+      if ((this.#data.materials[mat] || 0) < (required || 0)) {
         return false;
       }
     }
     return true;
   }
 
-  public adjustMaterial(mat: TrackedMaterial, delta: number): number {
-    if (this.materials[mat] === undefined) return 0;
-    const oldVal = this.materials[mat];
+  public addEquipment(itemName: string): void {
+    this.#data.equipmentInventoryIds.push(itemName);
+  }
 
-    if (this.materialRule === 'total') {
-      const currentTotal = this.totalMaterialsCount;
-      if (delta > 0) {
-        if (currentTotal >= 5) return 0;
-        const allowed = Math.min(delta, 5 - currentTotal);
-        this.materials[mat] += allowed;
-      } else {
-        this.materials[mat] = Math.max(0, this.materials[mat] + delta);
-      }
-    } else {
-      // 'stack' rule: up to 5 per material type
-      this.materials[mat] = Math.min(5, Math.max(0, this.materials[mat] + delta));
+  public removeEquipment(itemName: string): boolean {
+    const idx = this.#data.equipmentInventoryIds.indexOf(itemName);
+    if (idx !== -1) {
+      this.#data.equipmentInventoryIds.splice(idx, 1);
+      return true;
     }
 
-    return this.materials[mat] - oldVal;
+    for (const [slot, name] of Object.entries(this.#data.equipped)) {
+      if (name === itemName) {
+        this.#data.equipped[slot as keyof EquippedSlots] = null;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public equip(slot: keyof EquippedSlots, itemName: string): boolean {
+    if (!this.#data.equipmentInventoryIds.includes(itemName)) return false;
+
+    const current = this.#data.equipped[slot];
+    if (current) {
+      this.#data.equipmentInventoryIds.push(current);
+    }
+
+    const itemIdx = this.#data.equipmentInventoryIds.indexOf(itemName);
+    this.#data.equipmentInventoryIds.splice(itemIdx, 1);
+    this.#data.equipped[slot] = itemName;
+
+    return true;
+  }
+
+  public unequip(slot: keyof EquippedSlots): void {
+    const current = this.#data.equipped[slot];
+    if (current) {
+      this.#data.equipped[slot] = null;
+      this.#data.equipmentInventoryIds.push(current);
+    }
+  }
+
+  public adjustMaterial(mat: TrackedMaterial, delta: number): number {
+    const current = this.#data.materials[mat] || 0;
+    const next = Math.max(0, current + delta);
+    this.#data.materials[mat] = next;
+    return next - current;
   }
 
   public respawn(): void {
-    this.restarts += 1;
     this.resetHealth();
+    this.restarts += 1;
   }
 
-public toJSON(): SerializedCharacter {
+  // --- Combat Lifecycle Hook Forwarding ---
+  public onCombatStart(ctx: CombatContext): void { this.#dispatchItemHooks('onCombatStart', ctx); }
+  public onRoundStart(ctx: CombatContext): void { this.#dispatchItemHooks('onRoundStart', ctx); }
+  public onRollEvaluated(ctx: CombatContext): void { this.#dispatchItemHooks('onRollEvaluated', ctx); }
+  public onDealDamage(ctx: CombatContext): void { this.#dispatchItemHooks('onDealDamage', ctx); }
+  public onReceiveDamage(ctx: CombatContext): void { this.#dispatchItemHooks('onReceiveDamage', ctx); }
+  public onRoundEnd(ctx: CombatContext): void { this.#dispatchItemHooks('onRoundEnd', ctx); }
+  public onDeath(ctx: CombatContext): void { this.#dispatchItemHooks('onDeath', ctx); }
+  public onCombatEnd(ctx: CombatContext): void { this.#dispatchItemHooks('onCombatEnd', ctx); }
+
+  #dispatchItemHooks(hook: keyof CombatLifecycleHooks, ctx: CombatContext): void {
+    const items = [
+      this.equippedWeapon,
+      this.equippedArmor,
+      this.equippedPickaxe,
+      this.equippedKey,
+    ];
+    for (const item of items) {
+      item?.hooks?.[hook]?.(ctx);
+    }
+  }
+
+  // --- Serialization ---
+  public override toJSON(): CharacterConfig {
     return {
-      name: this.name,
-      health: this.hearts,
+      ...super.toJSON(),
       restarts: this.restarts,
-      equipmentInventoryIds: [...this.equipmentInventoryIds],
-      equipped: { ...this.equipped },
-      materials: { ...this.materials },
+      equipmentInventoryIds: [...this.#data.equipmentInventoryIds],
+      equipped: { ...this.#data.equipped },
+      materials: { ...this.#data.materials },
       materialRule: this.materialRule,
-      forestCleared: this.forestCleared,
-      mineCleared: this.mineCleared,
-      narrativeMode: this.narrativeMode,
-      currentPassageId: this.currentPassageId,
-      visitedPassages: [...this.visitedPassages],
     };
   }
 }

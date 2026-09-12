@@ -1,0 +1,247 @@
+import type { Character } from '../../models/Character';
+import type { OpenWorldProgression, ActiveView, GameProgressionState } from '../../types/game';
+import type { TrackedMaterial } from '../../types/inventory';
+import type { POINode, PointOfInterest, POINodeExit, POIQuestHook, Region } from '../../types/world';
+import { REGIONS } from '../../data/regions';
+import { PixelFrame } from '../ui/PixelFrame';
+import { StatusBar } from '../ui/StatusBar';
+import { Icon } from '../ui/Icon';
+import { evaluateCondition, applyMutations, EvaluationContext } from '../../engine/evaluator';
+import { useObservable } from '../../hooks/useObservable';
+
+interface PoiNodeViewProps {
+  hero: Character;
+  state: OpenWorldProgression;
+  regions: Record<string, Region>;
+  onUpdate: () => void;
+  onNavigateView: (view: ActiveView) => void;
+  onTriggerCombat: (mobName: string) => void;
+  onTriggerPassage: (passageId: string) => void;
+  onGainMaterial: (mat: TrackedMaterial, amt: number) => void;
+  onExitToMap: () => void;
+  game?: GameProgressionState;
+}
+
+export function PoiNodeView({
+  hero,
+  state,
+  regions,
+  onUpdate,
+  onNavigateView,
+  onTriggerCombat,
+  onTriggerPassage,
+  onGainMaterial,
+  onExitToMap,
+  game,
+}: PoiNodeViewProps) {
+  useObservable(hero);
+
+  const currentRegion = regions[state.currentRegionId] || REGIONS[state.currentRegionId] || Object.values(regions)[0];
+  const currentPoi: PointOfInterest | undefined = currentRegion.pointsOfInterest.find(
+    (p) => p.id === state.currentPoiId
+  );
+  const activeNodeId = state.currentNodeId || currentPoi?.entryNodeId || '';
+  const currentNode: POINode | undefined = currentPoi?.nodes[activeNodeId];
+
+  if (!currentPoi || !currentNode) {
+    return (
+      <section class="view-panel active">
+        <PixelFrame title="UNKNOWN LOCATION" icon="target">
+          <p>Location interior could not be found.</p>
+          <button type="button" class="pixel-btn btn-primary" onClick={onExitToMap}>
+            RETURN TO MAP
+          </button>
+        </PixelFrame>
+      </section>
+    );
+  }
+
+  const evalCtx: EvaluationContext = {
+    hero,
+    game: game || ({
+      openWorld: state,
+      narrative: { visitedPassages: [], currentPassageId: '' },
+      sandbox: { forestCleared: 0, mineCleared: 0 },
+    } as any),
+    onGainMaterial,
+  };
+
+  const checkExitRequirement = (exit: POINodeExit): { allowed: boolean; reason?: string } => {
+    if (exit.condition && !evaluateCondition(exit.condition, evalCtx)) {
+      return { allowed: false, reason: exit.lockedReason || 'Path is sealed' };
+    }
+    return { allowed: true };
+  };
+
+  const handleExitClick = (exit: POINodeExit) => {
+    const { allowed } = checkExitRequirement(exit);
+    if (!allowed) return;
+
+    if (exit.mutations) {
+      applyMutations(exit.mutations, evalCtx);
+      onUpdate();
+    }
+
+    if (exit.exitToRegion) {
+      onExitToMap();
+      return;
+    }
+
+    if (exit.targetNodeId) {
+      state.currentNodeId = exit.targetNodeId;
+      onUpdate();
+    }
+  };
+
+  const checkQuestHookAllowed = (qh: POIQuestHook): { allowed: boolean; reason?: string } => {
+    if (qh.condition && !evaluateCondition(qh.condition, evalCtx)) {
+      return { allowed: false, reason: qh.lockedReason || 'Locked' };
+    }
+    return { allowed: true };
+  };
+
+  const handleTriggerQuestHook = (qh: POIQuestHook) => {
+    const { allowed } = checkQuestHookAllowed(qh);
+    if (!allowed) return;
+
+    if (qh.mutations) {
+      applyMutations(qh.mutations, evalCtx);
+      onUpdate();
+    }
+    onTriggerPassage(qh.passageId);
+  };
+
+  const handleAction = (action: typeof currentNode.actions[0]) => {
+    if (action.type === 'combat' && action.mobName) {
+      onTriggerCombat(action.mobName);
+      return;
+    }
+    if (action.type === 'view' && action.view) {
+      onNavigateView(action.view);
+      return;
+    }
+    if (action.type === 'gather' && action.resourceGain) {
+      onGainMaterial(action.resourceGain.material, action.resourceGain.count);
+      return;
+    }
+    if (action.type === 'rest') {
+      hero.changeHealth(5);
+      onUpdate();
+    }
+  };
+
+  const renderedHooks = currentNode.questHooks.filter((qh) => {
+    const { allowed } = checkQuestHookAllowed(qh);
+    const behavior = qh.behavior || 'hide';
+    return allowed || behavior !== 'hide';
+  });
+
+  const renderedExits = currentNode.exits.filter((ex) => {
+    const { allowed } = checkExitRequirement(ex);
+    const behavior = ex.behavior || 'disable';
+    return allowed || behavior !== 'hide';
+  });
+
+  return (
+    <section class="view-panel active">
+      <PixelFrame title={`${currentPoi.name.toUpperCase()} - ${currentNode.title.toUpperCase()}`} icon="target">
+        <p class="narrative-prose">{currentNode.description}</p>
+
+        {currentNode.accessibleViews && currentNode.accessibleViews.length > 0 && (
+          <div style={{ background: '#eee', border: '3px solid #000', padding: '14px', marginBottom: '16px' }}>
+            <span class="narrative-section-tag">WORKSTATIONS & STATIONS</span>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+              {currentNode.accessibleViews.includes('crafting') && (
+                <button type="button" class="pixel-btn btn-active" onClick={() => onNavigateView('crafting')}>
+                  <Icon name="crafting" /> CRAFTING BENCH
+                </button>
+              )}
+              {currentNode.accessibleViews.includes('mining') && (
+                <button type="button" class="pixel-btn btn-primary" onClick={() => onNavigateView('mining')}>
+                  <Icon name="pickaxe" /> EXCAVATE MINES
+                </button>
+              )}
+              {currentNode.accessibleViews.includes('forest') && (
+                <button type="button" class="pixel-btn btn-success" onClick={() => onNavigateView('forest')}>
+                  <Icon name="tree" /> FORAGE GROVES
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {currentNode.actions.length > 0 && (
+          <div style={{ marginBottom: '16px' }}>
+            <span class="narrative-section-tag">AVAILABLE ACTIONS</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              {currentNode.actions.map((act) => (
+                <button
+                  key={act.id}
+                  type="button"
+                  class={`pixel-btn ${act.type === 'combat' ? 'btn-danger' : act.type === 'rest' ? 'btn-success' : ''}`}
+                  onClick={() => handleAction(act)}
+                >
+                  {act.type === 'combat' && <Icon name="sword" />}
+                  {act.type === 'rest' && <Icon name="bed" />}
+                  {act.type === 'gather' && <Icon name="spark" />}
+                  {act.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {renderedHooks.length > 0 && (
+          <div style={{ marginBottom: '16px' }}>
+            <span class="narrative-section-tag">QUEST HOOKS & DIALOGUE</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              {renderedHooks.map((qh) => {
+                const { allowed, reason } = checkQuestHookAllowed(qh);
+                return (
+                  <button
+                    key={qh.id}
+                    type="button"
+                    class={`pixel-btn narrative-choice-btn ${allowed ? 'btn-active' : 'choice-locked'}`}
+                    disabled={!allowed}
+                    onClick={() => handleTriggerQuestHook(qh)}
+                  >
+                    <span class="choice-text">
+                      <Icon name="book" /> {qh.label}
+                    </span>
+                    {!allowed && reason && <span class="choice-badge badge-locked">[{reason}]</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <span class="narrative-section-tag">PATHS & EXITS</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+            {renderedExits.map((ex, idx) => {
+              const { allowed, reason } = checkExitRequirement(ex);
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  class={`pixel-btn ${!allowed ? 'choice-locked' : ''}`}
+                  disabled={!allowed}
+                  onClick={() => handleExitClick(ex)}
+                  style={{ justifyContent: 'space-between' }}
+                >
+                  <span>{ex.label}</span>
+                  {!allowed && reason && <span class="choice-badge badge-locked">[{reason}]</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <StatusBar marginTop="16px">
+          Location: {currentPoi.name} | Room: {currentNode.title}
+        </StatusBar>
+      </PixelFrame>
+    </section>
+  );
+}

@@ -12,6 +12,14 @@
   font-style: normal;
 }
 
+@font-face {
+  font-family: "TIC-80 Narrow";
+  /* Check your file extension: change .otf to .ttf if your file is TrueType */
+  src: url('../assets/fonts/tic80-narrow.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -771,4 +779,11 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.ast-font,
+.ast-font input,
+.ast-font select,
+.ast-font button {
+  font-family: 'TIC-80 Narrow', monospace !important;
 }
