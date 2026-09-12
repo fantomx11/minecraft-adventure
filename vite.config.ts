@@ -4,6 +4,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 
 export default defineConfig({
   root: 'src',
+  base: './',
   resolve: {
     preserveSymlinks: true,
   },
