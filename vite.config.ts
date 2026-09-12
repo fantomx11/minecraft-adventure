@@ -9,6 +9,7 @@ export default defineConfig({
   },
   plugins: [preact(), viteSingleFile()],
   build: {
+    base: './',
     outDir: '../dist',
     emptyOutDir: true,
     target: 'esnext',
