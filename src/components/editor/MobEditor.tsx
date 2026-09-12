@@ -1,8 +1,7 @@
 // src/components/editor/MobEditor.tsx
-import { h, Fragment } from 'preact';
 import { useState } from 'preact/hooks';
 import type { MobConfig } from '../../models/Mob';
-import type { CombatHookEvent, CombatBehaviorAst, Action } from '../../types/ast';
+import type { CombatHookEvent, Action } from '../../types/ast';
 import { AstInterpreter } from '../../engine/astInterpreter';
 import { ActionListEditor } from './ActionNodeEditor';
 

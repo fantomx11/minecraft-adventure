@@ -238,7 +238,11 @@ export class AstInterpreter {
 
           if (isMat) {
             const matKey = TRACKED_MATERIALS.find(m => m.toLowerCase() === itemId.toLowerCase())!;
-            scope.hero.adjustMaterial(matKey, action.action === 'add' ? count : -count);
+            if (action.action === 'add' && scope.onGainMaterial) {
+              scope.onGainMaterial(matKey, count);
+            } else {
+              scope.hero.adjustMaterial(matKey, action.action === 'add' ? count : -count);
+            }
           } else {
             if (action.action === 'add') {
               for (let i = 0; i < count; i++) scope.hero.addEquipment(itemId);

@@ -1,4 +1,4 @@
-import { h, Fragment } from 'preact';
+import { Fragment } from 'preact';
 import type { Expr, BinaryOperator } from '../../types/ast';
 
 interface ExpressionEditorProps {
@@ -20,7 +20,7 @@ const COMMON_PATHS = [
   'roll',
 ];
 
-export function ExpressionEditor({ expr, onChange, compact = false }: ExpressionEditorProps) {
+export function ExpressionEditor({ expr, onChange }: ExpressionEditorProps) {
   const update = (patch: Partial<any>) => {
     onChange({ ...expr, ...patch } as Expr);
   };
@@ -58,6 +58,7 @@ export function ExpressionEditor({ expr, onChange, compact = false }: Expression
 
   return (
     <div
+      class="ast-font"
       style={{
         display: 'inline-flex',
         flexWrap: 'wrap',
@@ -67,8 +68,8 @@ export function ExpressionEditor({ expr, onChange, compact = false }: Expression
         background: '#1a1c23',
         border: '1px solid #333',
         color: '#fff',
-        fontFamily: 'monospace',
-        fontSize: '11px',
+        fontFamily: "'TIC-80 Narrow', monospace",
+        fontSize: '12px',
       }}
     >
       <select
@@ -78,7 +79,7 @@ export function ExpressionEditor({ expr, onChange, compact = false }: Expression
           background: '#2b2d38',
           color: '#8be9fd',
           border: '1px solid #444',
-          fontSize: '10px',
+          fontSize: '12px',
         }}
       >
         <option value="binary">Compare [A op B]</option>

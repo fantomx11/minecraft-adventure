@@ -93,7 +93,6 @@ export function migrateSaveData(raw: any): GameSaveData {
         name: 'Steve',
         hearts: 20,
         maxHearts: 20,
-        health: 20,
         restarts: 0,
         equipmentInventoryIds: ['Wooden Pickaxe'],
         equipped: { weapon: null, armor: null, pickaxe: 'Wooden Pickaxe', key: null },

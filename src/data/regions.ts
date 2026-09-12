@@ -211,9 +211,16 @@ export function validateWorldPackage(raw: unknown): OpenWorldPackage | null {
   }
 
   const passagesObj = candidate.passages || STORY_PASSAGES;
+
+  const mobsObj =
+    candidate.mobs && typeof candidate.mobs === 'object' && !Array.isArray(candidate.mobs)
+      ? candidate.mobs
+      : Object.fromEntries(BESTIARY.map((m) => [m.id, JSON.parse(JSON.stringify(m))]));
+
   return {
     regions: regionsObj as Record<string, Region>,
     passages: passagesObj as Record<string, Passage>,
+    mobs: mobsObj as Record<string, MobConfig>,
   };
 }
 
@@ -231,6 +238,6 @@ export function getInitialWorldPackage(): OpenWorldPackage {
   return {
     regions: JSON.parse(JSON.stringify(REGIONS)),
     passages: JSON.parse(JSON.stringify(STORY_PASSAGES)),
-    mobs: JSON.parse(JSON.stringify(BESTIARY))
+    mobs: Object.fromEntries(BESTIARY.map((m) => [m.id, JSON.parse(JSON.stringify(m))]))
   };
 }

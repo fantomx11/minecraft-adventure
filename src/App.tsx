@@ -24,6 +24,7 @@ import type { EngineContext } from './types/controller';
 import { CUSTOM_WORLD_STORAGE_KEY, getInitialWorldPackage, REGIONS, validateWorldPackage } from './data/regions';
 import type { Region } from './types/world';
 import { GameStore } from './models/GameStore';
+import { BESTIARY } from './data/bestiary';
 
 const STORAGE_KEY = 'minecraft_multimode_rpg_data';
 
@@ -36,6 +37,7 @@ export function App() {
       return migrateSaveData(null);
     }
   });
+  const worldPackage = getInitialWorldPackage();
 
   const [hero, setHero] = useState<Character>(() => new Character(saveData.character));
   const [game, setGame] = useState<GameStore>(() => new GameStore(saveData.game));
@@ -80,6 +82,7 @@ const saveState = useCallback(() => {
     game,
     passages: storyPassages,
     regions,
+    mobs: worldPackage?.mobs ?? Object.fromEntries(BESTIARY.map((m) => [m.id, m])),
     saveState,
     setActiveView: (v) => {
       game.activeView = v;

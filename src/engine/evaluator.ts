@@ -31,6 +31,7 @@ export function applyMutations(
   const scope: RuntimeScope = {
     hero: ctx.hero,
     game: ctx.game,
+    onGainMaterial: ctx.onGainMaterial, // <-- Forward callback to interpreter
   };
   AstInterpreter.execute(mutations, scope);
 }

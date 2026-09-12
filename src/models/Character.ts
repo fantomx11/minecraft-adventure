@@ -31,7 +31,7 @@ const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
 export class Character extends Entity implements CombatLifecycleHooks {
   #data: CharacterData;
 
-  constructor({restarts, materialRule, equipmentInventoryIds, equipped, materials, ...entityConfig}: Partial<CharacterConfig>) {
+  constructor({restarts, materialRule, equipmentInventoryIds, equipped, materials, ...entityConfig}: Partial<CharacterConfig> = {}) {
     const json = Object.assign({name: 'Steve', maxHearts: 20}, entityConfig);
     super(json);
 
@@ -42,10 +42,10 @@ export class Character extends Entity implements CombatLifecycleHooks {
         ? [...equipmentInventoryIds]
         : ['Wooden Pickaxe'],
       equipped: {
-        weapon: initialData?.equipped?.weapon ?? null,
-        armor: initialData?.equipped?.armor ?? null,
-        pickaxe: initialData?.equipped?.pickaxe ?? 'Wooden Pickaxe',
-        key: initialData?.equipped?.key ?? null,
+        weapon: equipped?.weapon ?? null,
+        armor: equipped?.armor ?? null,
+        pickaxe: equipped?.pickaxe ?? 'Wooden Pickaxe',
+        key: equipped?.key ?? null,
       },
       materials: {
         ...DEFAULT_MATERIALS,
@@ -218,7 +218,6 @@ export class Character extends Entity implements CombatLifecycleHooks {
   public override toJSON(): CharacterConfig {
     return {
       ...super.toJSON(),
-      health: this.hearts,
       restarts: this.restarts,
       equipmentInventoryIds: [...this.#data.equipmentInventoryIds],
       equipped: { ...this.#data.equipped },

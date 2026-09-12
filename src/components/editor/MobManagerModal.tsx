@@ -1,4 +1,4 @@
-import { h } from 'preact';
+import { Fragment } from 'preact';
 import { useState } from 'preact/hooks';
 import type { MobConfig } from '../../models/Mob';
 import type { GamePackage } from '../../types/package';

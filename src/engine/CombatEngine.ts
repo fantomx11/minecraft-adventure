@@ -82,7 +82,7 @@ export class CombatEngine {
     this.dispatchHook('onRollEvaluated');
 
     if (this.ctx.roundState.matchingMisses >= 4) {
-      this.ctx.combatState.hero.setHealth(0);
+      this.ctx.combatState.hero.hearts = 0;
       this.ctx.roundState.messages.push({
         type: 'special',
         text: '💀 CRITICAL MISS (QUADRUPLE): Complete failure! Instant Loss!',
@@ -151,7 +151,7 @@ export class CombatEngine {
 
   public applyCritHitEffect(option: number): void {
     if (option === 1) {
-      this.ctx.combatState.mob.setHealth(0);
+      this.ctx.combatState.mob.hearts = 0;
       this.ctx.roundState.messages.push({
         type: 'special',
         text: '⭐ CRITICAL HIT [1]: Instant Win! The monster collapses immediately!',
@@ -226,7 +226,7 @@ export class CombatEngine {
         text: '⚠️ CRITICAL MISS [5]: Catastrophic blunder! Both weapon and armor shattered!',
       });
     } else if (roll === 6) {
-      this.ctx.combatState.hero.setHealth(0);
+      this.ctx.combatState.hero.hearts = 0;
       this.ctx.roundState.messages.push({
         type: 'special',
         text: '🔥 CRITICAL MISS [6]: You slipped into molten lava and died!',

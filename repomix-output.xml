@@ -87,6 +87,24 @@ src/
 <files>
 This section contains the contents of the repository's files.
 
+<file path="src/controllers/index.ts">
+import type { GameModeId } from '../types/game';
+import type { GameModeController } from '../types/controller';
+import { SandboxModeController } from './SandboxController';
+import { NarrativeModeController } from './NarrativeController';
+import { OpenWorldModeController } from './OpenWorldController';
+
+export const MODE_CONTROLLERS: Record<GameModeId, GameModeController> = {
+  sandbox: new SandboxModeController(),
+  narrative: new NarrativeModeController(),
+  open_world: new OpenWorldModeController(),
+};
+
+export function getModeController(modeId: GameModeId): GameModeController {
+  return MODE_CONTROLLERS[modeId] || MODE_CONTROLLERS.sandbox;
+}
+</file>
+
 <file path="src/engine/mobRegistry.ts">
 import { BESTIARY } from '../data/bestiary';
 import { Mob, type MobConfig } from '../models/Mob';
@@ -153,6 +171,239 @@ export class MobRegistry {
 }
 </file>
 
+<file path="src/hooks/useObservable.ts">
+import { useState, useEffect } from 'preact/hooks';
+import type { Observable } from '../models/Observable';
+
+export function useObservable(...targets: (Observable | null | undefined)[]): void {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const unsubscribers = targets
+      .filter((t): t is Observable => Boolean(t))
+      .map((t) => t.subscribe(() => setTick((v) => v + 1)));
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, targets);
+}
+</file>
+
+<file path="src/models/Effects.ts">
+import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
+
+export class VexEffect implements CombatLifecycleHooks {
+  public id: string;
+  public name: string = 'Vex';
+
+  constructor() {
+    this.id = `vex_${Math.random().toString(36).substring(2, 9)}`;
+  }
+
+  public onRollEvaluated(ctx: CombatContext): void {
+    if (ctx.roundState.matchingHits >= 2 && !ctx.roundState.vexBanishedThisRound) {
+      ctx.roundState.vexBanishedThisRound = true;
+      ctx.combatState.effects = ctx.combatState.effects.filter(
+        (e) => (e as VexEffect).id !== this.id
+      );
+      ctx.roundState.messages.push({
+        type: 'notice',
+        text: '✨ Double hits banished 1 Vex!',
+      });
+    }
+  }
+
+  public onDealDamage(ctx: CombatContext): void {
+    ctx.roundState.mobDamageInstances.push({
+      amount: 1,
+      source: 'Vex Attack',
+      appliesArmor: true,
+    });
+  }
+}
+
+export class PoisonEffect implements CombatLifecycleHooks {
+  public id: string;
+  public amount: number;
+
+  constructor(amount: number = 1) {
+    this.id = `poison_${Math.random().toString(36).substring(2, 9)}`;
+    this.amount = amount;
+  }
+
+  public onRoundStart(ctx: CombatContext): void {
+    ctx.combatState.hero.changeHealth(-this.amount);
+    ctx.roundState.messages.push({
+      type: 'miss',
+      text: `☠️ Poison deals ${this.amount} damage directly to your hearts!`,
+    });
+  }
+}
+</file>
+
+<file path="src/models/GameStore.ts">
+import { Observable } from './Observable';
+import type {
+  GameProgressionState,
+  GameModeId,
+  ActiveView,
+  SandboxProgression,
+  NarrativeProgression,
+  OpenWorldProgression,
+} from '../types/game';
+
+export class GameStore extends Observable {
+  #data: GameProgressionState;
+
+  constructor(initialData: GameProgressionState) {
+    super();
+    // Deep-proxied reactive store
+    this.#data = this.createReactiveStore(initialData);
+  }
+
+  // --- Top-Level Accessors ---
+  public get mode(): GameModeId {
+    return this.#data.mode;
+  }
+  public set mode(val: GameModeId) {
+    this.#data.mode = val;
+  }
+
+  public get activeView(): ActiveView {
+    return this.#data.activeView;
+  }
+  public set activeView(val: ActiveView) {
+    this.#data.activeView = val;
+  }
+
+  // --- Sub-Progression Accessors (Mutations on child properties trigger notify) ---
+  public get sandbox(): SandboxProgression {
+    return this.#data.sandbox;
+  }
+
+  public get narrative(): NarrativeProgression {
+    return this.#data.narrative;
+  }
+
+  public get openWorld(): OpenWorldProgression {
+    return this.#data.openWorld;
+  }
+
+  // --- Serialization ---
+  public toJSON(): GameProgressionState {
+    return JSON.parse(JSON.stringify(this.#data));
+  }
+}
+</file>
+
+<file path="src/models/Item.ts">
+import type { EquipmentConfig, EquipmentType } from '../types/inventory';
+import type { CombatLifecycleHooks } from '../types/combat';
+
+export class Item {
+  public name: string;
+  public type: EquipmentType;
+  public attack: number;
+  public damage: number;
+  public armorValue: number;
+  public diceBonus: number;
+  public description: string;
+  public hooks?: CombatLifecycleHooks;
+
+  constructor(config: EquipmentConfig) {
+    this.name = config.name;
+    this.type = config.type;
+    this.attack = config.attack ?? 1;
+    this.damage = config.damage ?? 1;
+    this.armorValue = config.armorValue ?? 0;
+    this.diceBonus = config.diceBonus ?? 1;
+    this.description = config.description ?? '';
+    this.hooks = config.hooks;
+  }
+}
+</file>
+
+<file path="src/models/Observable.ts">
+export class Observable {
+  #listeners = new Set<() => void>();
+  #notifyScheduled = false;
+
+  public subscribe(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  public notify(): void {
+    if (this.#notifyScheduled) return;
+    this.#notifyScheduled = true;
+
+    // Batches synchronous mutations across the call stack into one render pass
+    queueMicrotask(() => {
+      this.#notifyScheduled = false;
+      for (const listener of this.#listeners) {
+        listener();
+      }
+    });
+  }
+
+  /**
+   * Recursively wraps a target object/array in a Proxy store.
+   * Any mutation on the target or its nested properties triggers this.notify().
+   */
+  protected createReactiveStore<T extends object>(target: T): T {
+    const self = this;
+    const proxyCache = new WeakMap<object, any>();
+
+    function createProxy<O extends object>(obj: O): O {
+      if (proxyCache.has(obj)) {
+        return proxyCache.get(obj);
+      }
+
+      const handler: ProxyHandler<O> = {
+        get(t, prop, receiver) {
+          const val = Reflect.get(t, prop, receiver);
+          if (val !== null && typeof val === 'object') {
+            return createProxy(val);
+          }
+          return val;
+        },
+        set(t, prop, value, receiver) {
+          const old = (t as any)[prop];
+          if (old === value) return true;
+
+          const result = Reflect.set(t, prop, value, receiver);
+          self.notify();
+          return result;
+        },
+        deleteProperty(t, prop) {
+          const result = Reflect.deleteProperty(t, prop);
+          self.notify();
+          return result;
+        },
+      };
+
+      const proxy = new Proxy(obj, handler);
+      proxyCache.set(obj, proxy);
+      return proxy;
+    }
+
+    return createProxy(target);
+  }
+}
+</file>
+
+<file path="src/types/dice.ts">
+export type DieTagVariant = 'hit' | 'miss' | 'neutral' | 'bonus';
+
+export interface DieItem {
+  value: number;
+  tag?: string;
+  variant?: DieTagVariant;
+  selected?: boolean;
+}
+</file>
+
 <file path="src/types/package.ts">
 import type { GameModeId } from './game';
 import type { Region } from './world';
@@ -194,21 +445,217 @@ export function validateGamePackage(raw: unknown): GamePackage | null {
 }
 </file>
 
-<file path="src/controllers/index.ts">
-import type { GameModeId } from '../types/game';
-import type { GameModeController } from '../types/controller';
-import { SandboxModeController } from './SandboxController';
-import { NarrativeModeController } from './NarrativeController';
-import { OpenWorldModeController } from './OpenWorldController';
+<file path="src/controllers/NarrativeController.ts">
+import type { GameModeController, EngineContext, CombatTriggerPayload, ReturnBannerDescriptor } from '../types/controller';
+import type { ActiveView } from '../types/game';
+import type { TrackedMaterial } from '../types/inventory';
 
-export const MODE_CONTROLLERS: Record<GameModeId, GameModeController> = {
-  sandbox: new SandboxModeController(),
-  narrative: new NarrativeModeController(),
-  open_world: new OpenWorldModeController(),
-};
+export class NarrativeModeController implements GameModeController {
+  public readonly id = 'narrative';
+  public readonly label = 'Narrative Mode';
+  public readonly defaultView: ActiveView = 'narrative';
+  public readonly allowInventoryEditing = false;
 
-export function getModeController(modeId: GameModeId): GameModeController {
-  return MODE_CONTROLLERS[modeId] || MODE_CONTROLLERS.sandbox;
+  public getAccessibleViews(ctx: EngineContext): ActiveView[] {
+    const currentPassage = ctx.passages[ctx.game.narrative.currentPassageId];
+    const allowed: ActiveView[] = ['narrative'];
+    if (currentPassage?.accessibleViews) {
+      allowed.push(...currentPassage.accessibleViews);
+    }
+    return allowed;
+  }
+
+  public canNavigateToView(targetView: ActiveView, ctx: EngineContext): boolean {
+    if (targetView === 'combat') return true;
+    return this.getAccessibleViews(ctx).includes(targetView);
+  }
+
+  public getReturnBanner(ctx: EngineContext): ReturnBannerDescriptor | null {
+    if (ctx.game.activeView === 'narrative' || ctx.game.activeView === 'combat') {
+      return null;
+    }
+    const currentPassage = ctx.passages[ctx.game.narrative.currentPassageId];
+    return {
+      label: `RETURN TO STORY (${currentPassage?.title?.toUpperCase() || 'PASSAGE'})`,
+      action: () => ctx.setActiveView('narrative'),
+    };
+  }
+
+  public onActivityCleared(type: 'forest' | 'mining', ctx: EngineContext): void {
+    if (type === 'forest') ctx.game.sandbox.forestCleared += 1;
+    if (type === 'mining') ctx.game.sandbox.mineCleared += 1;
+    ctx.saveState();
+  }
+
+  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
+    ctx.setActiveView('combat');
+  }
+
+  public resolveCombatExit(
+    outcome: 'victory' | 'defeat',
+    ctx: EngineContext,
+    runtimeContext?: Record<string, any>
+  ): void {
+    if (outcome === 'victory' && runtimeContext?.victoryPassageId) {
+      ctx.game.narrative.currentPassageId = runtimeContext.victoryPassageId;
+    } else {
+      ctx.hero.respawn();
+      ctx.game.narrative.currentPassageId = runtimeContext?.defeatPassageId || 'combat_defeat';
+    }
+    ctx.setActiveView('narrative');
+    ctx.saveState();
+  }
+
+  public handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void {
+    const added = ctx.hero.adjustMaterial(mat, amount);
+    if (added === 0 && ctx.hero.materialRule === 'total' && ctx.hero.totalMaterialsCount >= 5) {
+      ctx.setPendingMaterial(mat);
+    } else {
+      ctx.saveState();
+    }
+  }
+
+  public handleHeroDefeated(ctx: EngineContext): void {
+    ctx.hero.respawn();
+    ctx.game.narrative.currentPassageId = 'combat_defeat';
+    ctx.setActiveView('narrative');
+    ctx.saveState();
+  }
+}
+</file>
+
+<file path="src/controllers/OpenWorldController.ts">
+import type { GameModeController, EngineContext, CombatTriggerPayload, ReturnBannerDescriptor } from '../types/controller';
+import type { ActiveView } from '../types/game';
+import type { TrackedMaterial } from '../types/inventory';
+
+export class OpenWorldModeController implements GameModeController {
+  public readonly id = 'open_world';
+  public readonly label = 'Open World Mode';
+  public readonly defaultView: ActiveView = 'world_map';
+  public readonly allowInventoryEditing = false;
+
+  public getAccessibleViews(ctx: EngineContext): ActiveView[] {
+    const views: ActiveView[] = ['world_map'];
+    if (ctx.game.openWorld.currentPoiId) {
+      views.push('poi_node');
+      const region = ctx.regions[ctx.game.openWorld.currentRegionId];
+      const poi = region?.pointsOfInterest.find((p) => p.id === ctx.game.openWorld.currentPoiId);
+      const node = poi?.nodes[ctx.game.openWorld.currentNodeId || poi.entryNodeId];
+      if (node?.accessibleViews) {
+        views.push(...node.accessibleViews);
+      }
+    }
+    return views;
+  }
+
+  public canNavigateToView(targetView: ActiveView, ctx: EngineContext): boolean {
+    return this.getAccessibleViews(ctx).includes(targetView);
+  }
+
+  public getReturnBanner(ctx: EngineContext): ReturnBannerDescriptor | null {
+    if (ctx.game.activeView === 'world_map' || ctx.game.activeView === 'poi_node') {
+      return null;
+    }
+    if (ctx.game.openWorld.currentPoiId) {
+      return {
+        label: 'RETURN TO LOCATION',
+        action: () => ctx.setActiveView('poi_node'),
+      };
+    }
+    return {
+      label: 'RETURN TO WORLD MAP',
+      action: () => ctx.setActiveView('world_map'),
+    };
+  }
+
+  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
+    ctx.setActiveView('combat');
+  }
+
+  public resolveCombatExit(outcome: 'victory' | 'defeat', ctx: EngineContext): void {
+    if (outcome === 'defeat') {
+      ctx.hero.respawn();
+      ctx.game.openWorld.currentPoiId = null;
+      ctx.game.openWorld.currentNodeId = null;
+      ctx.game.openWorld.counters.trekBonus = 0;
+      ctx.setActiveView('world_map');
+    } else {
+      ctx.setActiveView(ctx.game.openWorld.currentPoiId ? 'poi_node' : 'world_map');
+    }
+    ctx.saveState();
+  }
+
+  public handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void {
+    const added = ctx.hero.adjustMaterial(mat, amount);
+    if (added === 0 && ctx.hero.materialRule === 'total' && ctx.hero.totalMaterialsCount >= 5) {
+      ctx.setPendingMaterial(mat);
+    } else {
+      ctx.saveState();
+    }
+  }
+
+  public handleHeroDefeated(ctx: EngineContext): void {
+    ctx.hero.respawn();
+    ctx.game.openWorld.currentPoiId = null;
+    ctx.game.openWorld.currentNodeId = null;
+    ctx.game.openWorld.counters.trekBonus = 0;
+    ctx.setActiveView('world_map');
+    ctx.saveState();
+  }
+}
+</file>
+
+<file path="src/controllers/SandboxController.ts">
+import type { GameModeController, EngineContext, CombatTriggerPayload, ReturnBannerDescriptor } from '../types/controller';
+import type { ActiveView } from '../types/game';
+import type { TrackedMaterial } from '../types/inventory';
+
+export class SandboxModeController implements GameModeController {
+  public readonly id = 'sandbox';
+  public readonly label = 'Sandbox Mode';
+  public readonly defaultView: ActiveView = 'combat';
+  public readonly allowInventoryEditing = true;
+
+  public getAccessibleViews(): ActiveView[] {
+    return ['combat', 'forest', 'mining', 'crafting'];
+  }
+
+  public canNavigateToView(targetView: ActiveView): boolean {
+    return this.getAccessibleViews().includes(targetView);
+  }
+
+  public getReturnBanner(): ReturnBannerDescriptor | null {
+    return null;
+  }
+
+  public onActivityCleared(type: 'forest' | 'mining', ctx: EngineContext): void {
+    if (type === 'forest') ctx.game.sandbox.forestCleared += 1;
+    if (type === 'mining') ctx.game.sandbox.mineCleared += 1;
+    ctx.saveState();
+  }
+
+  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
+    ctx.setActiveView('combat');
+  }
+
+  public resolveCombatExit(_outcome: 'victory' | 'defeat', ctx: EngineContext): void {
+    ctx.setActiveView('combat');
+  }
+
+  public handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void {
+    const added = ctx.hero.adjustMaterial(mat, amount);
+    if (added === 0 && ctx.hero.materialRule === 'total' && ctx.hero.totalMaterialsCount >= 5) {
+      ctx.setPendingMaterial(mat);
+    } else {
+      ctx.saveState();
+    }
+  }
+
+  public handleHeroDefeated(ctx: EngineContext): void {
+    ctx.hero.respawn();
+    ctx.saveState();
+  }
 }
 </file>
 
@@ -453,7 +900,11 @@ export class AstInterpreter {
 
           if (isMat) {
             const matKey = TRACKED_MATERIALS.find(m => m.toLowerCase() === itemId.toLowerCase())!;
-            scope.hero.adjustMaterial(matKey, action.action === 'add' ? count : -count);
+            if (action.action === 'add' && scope.onGainMaterial) {
+              scope.onGainMaterial(matKey, count);
+            } else {
+              scope.hero.adjustMaterial(matKey, action.action === 'add' ? count : -count);
+            }
           } else {
             if (action.action === 'add') {
               for (let i = 0; i < count; i++) scope.hero.addEquipment(itemId);
@@ -575,229 +1026,79 @@ export function applyMutations(
   const scope: RuntimeScope = {
     hero: ctx.hero,
     game: ctx.game,
+    onGainMaterial: ctx.onGainMaterial, // <-- Forward callback to interpreter
   };
   AstInterpreter.execute(mutations, scope);
 }
 </file>
 
-<file path="src/hooks/useObservable.ts">
-import { useState, useEffect } from 'preact/hooks';
-import type { Observable } from '../models/Observable';
+<file path="src/engine/travelResolvers.ts">
+import type { Character } from '../models/Character';
+import type { OpenWorldProgression } from '../types/game';
+import type { TravelRequest, TravelOutcome, TravelResolver, Region } from '../types/world';
+import { REGIONS } from '../data/regions';
 
-export function useObservable(...targets: (Observable | null | undefined)[]): void {
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    const unsubscribers = targets
-      .filter((t): t is Observable => Boolean(t))
-      .map((t) => t.subscribe(() => setTick((v) => v + 1)));
-
-    return () => {
-      unsubscribers.forEach((unsub) => unsub());
-    };
-  }, targets);
-}
-</file>
-
-<file path="src/models/Effects.ts">
-import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
-
-export class VexEffect implements CombatLifecycleHooks {
-  public id: string;
-  public name: string = 'Vex';
-
-  constructor() {
-    this.id = `vex_${Math.random().toString(36).substring(2, 9)}`;
-  }
-
-  public onRollEvaluated(ctx: CombatContext): void {
-    if (ctx.roundState.matchingHits >= 2 && !ctx.roundState.vexBanishedThisRound) {
-      ctx.roundState.vexBanishedThisRound = true;
-      ctx.combatState.effects = ctx.combatState.effects.filter(
-        (e) => (e as VexEffect).id !== this.id
-      );
-      ctx.roundState.messages.push({
-        type: 'notice',
-        text: '✨ Double hits banished 1 Vex!',
-      });
+export class StandardTravelResolver implements TravelResolver {
+  public canTravel(
+    _hero: Character,
+    state: OpenWorldProgression,
+    req: TravelRequest,
+    regions: Record<string, Region> = REGIONS
+  ): { allowed: boolean; reason?: string } {
+    const fromRegion = regions[req.fromRegionId];
+    if (!fromRegion) return { allowed: false, reason: 'Unknown origin region.' };
+    const isAdjacent = fromRegion.adjacentRegionIds.includes(req.toRegionId);
+    const isDiscovered = state.discoveredRegions.includes(req.toRegionId);
+    
+    if (!isAdjacent && !isDiscovered) {
+      return { allowed: false, reason: 'Destination is not adjacent or discovered.' };
     }
+    return { allowed: true };
   }
 
-  public onDealDamage(ctx: CombatContext): void {
-    ctx.roundState.mobDamageInstances.push({
-      amount: 1,
-      source: 'Vex Attack',
-      appliesArmor: true,
-    });
-  }
-}
+  public resolveTravel(
+    _hero: Character,
+    state: OpenWorldProgression,
+    req: TravelRequest,
+    regions: Record<string, Region> = REGIONS
+  ): TravelOutcome {
+    const targetRegion = regions[req.toRegionId];
+    if (!targetRegion) {
+      return { success: false, logMessages: ['Unknown destination region.'] };
+    }
 
-export class PoisonEffect implements CombatLifecycleHooks {
-  public id: string;
-  public amount: number;
+    const roll = Math.floor(Math.random() * 6) + 1;
+    const logs: string[] = [];
 
-  constructor(amount: number = 1) {
-    this.id = `poison_${Math.random().toString(36).substring(2, 9)}`;
-    this.amount = amount;
-  }
+    state.counters.travelSteps = (state.counters.travelSteps || 0) + 1;
+    state.counters.trekBonus = 0;
 
-  public onRoundStart(ctx: CombatContext): void {
-    ctx.combatState.hero.changeHealth(-this.amount);
-    ctx.roundState.messages.push({
-      type: 'miss',
-      text: `☠️ Poison deals ${this.amount} damage directly to your hearts!`,
-    });
-  }
-}
-</file>
-
-<file path="src/models/GameStore.ts">
-import { Observable } from './Observable';
-import type {
-  GameProgressionState,
-  GameModeId,
-  ActiveView,
-  SandboxProgression,
-  NarrativeProgression,
-  OpenWorldProgression,
-} from '../types/game';
-
-export class GameStore extends Observable {
-  #data: GameProgressionState;
-
-  constructor(initialData: GameProgressionState) {
-    super();
-    // Deep-proxied reactive store
-    this.#data = this.createReactiveStore(initialData);
-  }
-
-  // --- Top-Level Accessors ---
-  public get mode(): GameModeId {
-    return this.#data.mode;
-  }
-  public set mode(val: GameModeId) {
-    this.#data.mode = val;
-  }
-
-  public get activeView(): ActiveView {
-    return this.#data.activeView;
-  }
-  public set activeView(val: ActiveView) {
-    this.#data.activeView = val;
-  }
-
-  // --- Sub-Progression Accessors (Mutations on child properties trigger notify) ---
-  public get sandbox(): SandboxProgression {
-    return this.#data.sandbox;
-  }
-
-  public get narrative(): NarrativeProgression {
-    return this.#data.narrative;
-  }
-
-  public get openWorld(): OpenWorldProgression {
-    return this.#data.openWorld;
-  }
-
-  // --- Serialization ---
-  public toJSON(): GameProgressionState {
-    return JSON.parse(JSON.stringify(this.#data));
-  }
-}
-</file>
-
-<file path="src/models/Item.ts">
-import type { EquipmentConfig, EquipmentType } from '../types/inventory';
-import type { CombatLifecycleHooks } from '../types/combat';
-
-export class Item {
-  public name: string;
-  public type: EquipmentType;
-  public attack: number;
-  public damage: number;
-  public armorValue: number;
-  public diceBonus: number;
-  public description: string;
-  public hooks?: CombatLifecycleHooks;
-
-  constructor(config: EquipmentConfig) {
-    this.name = config.name;
-    this.type = config.type;
-    this.attack = config.attack ?? 1;
-    this.damage = config.damage ?? 1;
-    this.armorValue = config.armorValue ?? 0;
-    this.diceBonus = config.diceBonus ?? 1;
-    this.description = config.description ?? '';
-    this.hooks = config.hooks;
-  }
-}
-</file>
-
-<file path="src/models/Observable.ts">
-export class Observable {
-  #listeners = new Set<() => void>();
-  #notifyScheduled = false;
-
-  public subscribe(listener: () => void): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  }
-
-  public notify(): void {
-    if (this.#notifyScheduled) return;
-    this.#notifyScheduled = true;
-
-    // Batches synchronous mutations across the call stack into one render pass
-    queueMicrotask(() => {
-      this.#notifyScheduled = false;
-      for (const listener of this.#listeners) {
-        listener();
-      }
-    });
-  }
-
-  /**
-   * Recursively wraps a target object/array in a Proxy store.
-   * Any mutation on the target or its nested properties triggers this.notify().
-   */
-  protected createReactiveStore<T extends object>(target: T): T {
-    const self = this;
-    const proxyCache = new WeakMap<object, any>();
-
-    function createProxy<O extends object>(obj: O): O {
-      if (proxyCache.has(obj)) {
-        return proxyCache.get(obj);
-      }
-
-      const handler: ProxyHandler<O> = {
-        get(t, prop, receiver) {
-          const val = Reflect.get(t, prop, receiver);
-          if (val !== null && typeof val === 'object') {
-            return createProxy(val);
-          }
-          return val;
-        },
-        set(t, prop, value, receiver) {
-          const old = (t as any)[prop];
-          if (old === value) return true;
-
-          const result = Reflect.set(t, prop, value, receiver);
-          self.notify();
-          return result;
-        },
-        deleteProperty(t, prop) {
-          const result = Reflect.deleteProperty(t, prop);
-          self.notify();
-          return result;
-        },
+    if (roll <= 2 && targetRegion.encounterTable?.length) {
+      const mobEntry = targetRegion.encounterTable[
+        Math.floor(Math.random() * targetRegion.encounterTable.length)
+      ];
+      logs.push(`Ambush on the road to ${targetRegion.name}! A ${mobEntry.mob} attacks!`);
+      return {
+        success: false,
+        combatMob: mobEntry.mob,
+        logMessages: logs,
       };
-
-      const proxy = new Proxy(obj, handler);
-      proxyCache.set(obj, proxy);
-      return proxy;
     }
 
-    return createProxy(target);
+    logs.push(`Traveled safely to ${targetRegion.name}.`);
+    if (!state.discoveredRegions.includes(req.toRegionId)) {
+      state.discoveredRegions.push(req.toRegionId);
+      logs.push(`Discovered new region: ${targetRegion.name}!`);
+    }
+
+    state.currentRegionId = req.toRegionId;
+    state.currentPoiId = null;
+    state.currentNodeId = null;
+
+    return {
+      success: true,
+      logMessages: logs,
+    };
   }
 }
 </file>
@@ -992,539 +1293,254 @@ export type CombatHookEvent = keyof CombatLifecycleHooks;
 export type CombatBehaviorAst = Partial<Record<CombatHookEvent, Action[]>>;
 </file>
 
-<file path="src/types/dice.ts">
-export type DieTagVariant = 'hit' | 'miss' | 'neutral' | 'bonus';
+<file path="src/types/inventory.ts">
+import type { CombatLifecycleHooks } from './combat';
 
-export interface DieItem {
-  value: number;
-  tag?: string;
-  variant?: DieTagVariant;
-  selected?: boolean;
+export type TrackedMaterial = 
+  | 'Wood' 
+  | 'Stone' 
+  | 'Iron' 
+  | 'Coal' 
+  | 'Diamond' 
+  | 'Leather' 
+  | 'String' 
+  | 'Wheat' 
+  | 'Gunpowder' 
+  | 'Slimeball'
+  | 'Fish';
+
+export type EquipmentType = 'weapon' | 'armor' | 'pickaxe' | 'key';
+export type InventoryRule = 'total' | 'stack';
+
+export interface EquippedSlots {
+  weapon: string | null;
+  armor: string | null;
+  pickaxe: string | null;
+  key: string | null;
+}
+
+export interface EquipmentConfig {
+  name: string;
+  type: EquipmentType;
+  attack?: number;
+  damage?: number;
+  armorValue?: number;
+  diceBonus?: number;
+  description?: string;
+  hooks?: CombatLifecycleHooks;
+}
+
+export interface CraftingRecipe {
+  name: string;
+  type: EquipmentType;
+  cost: Partial<Record<TrackedMaterial, number>>;
+  desc: string;
 }
 </file>
 
-<file path="src/controllers/NarrativeController.ts">
-import type { GameModeController, EngineContext, CombatTriggerPayload, ReturnBannerDescriptor } from '../types/controller';
-import type { ActiveView } from '../types/game';
-import type { TrackedMaterial } from '../types/inventory';
+<file path="src/data/recipes.ts">
+import { Item } from '../models/Item';
+import type { EquipmentConfig, CraftingRecipe, TrackedMaterial } from '../types/inventory';
+import type { CombatContext } from '../types/combat';
 
-export class NarrativeModeController implements GameModeController {
-  public readonly id = 'narrative';
-  public readonly label = 'Narrative Mode';
-  public readonly defaultView: ActiveView = 'narrative';
-  public readonly allowInventoryEditing = false;
+export const TRACKED_MATERIALS: TrackedMaterial[] = [
+  'Wood', 'Stone', 'Iron', 'Coal', 'Diamond',
+  'Leather', 'String', 'Wheat', 'Gunpowder', 'Slimeball', 'Fish'
+];
 
-  public getAccessibleViews(ctx: EngineContext): ActiveView[] {
-    const currentPassage = ctx.passages[ctx.game.narrative.currentPassageId];
-    const allowed: ActiveView[] = ['narrative'];
-    if (currentPassage?.accessibleViews) {
-      allowed.push(...currentPassage.accessibleViews);
-    }
-    return allowed;
-  }
-
-  public canNavigateToView(targetView: ActiveView, ctx: EngineContext): boolean {
-    if (targetView === 'combat') return true;
-    return this.getAccessibleViews(ctx).includes(targetView);
-  }
-
-  public getReturnBanner(ctx: EngineContext): ReturnBannerDescriptor | null {
-    if (ctx.game.activeView === 'narrative' || ctx.game.activeView === 'combat') {
-      return null;
-    }
-    const currentPassage = ctx.passages[ctx.game.narrative.currentPassageId];
-    return {
-      label: `RETURN TO STORY (${currentPassage?.title?.toUpperCase() || 'PASSAGE'})`,
-      action: () => ctx.setActiveView('narrative'),
-    };
-  }
-
-  public onActivityCleared(type: 'forest' | 'mining', ctx: EngineContext): void {
-    if (type === 'forest') ctx.game.sandbox.forestCleared += 1;
-    if (type === 'mining') ctx.game.sandbox.mineCleared += 1;
-    ctx.saveState();
-  }
-
-  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
-    ctx.setActiveView('combat');
-  }
-
-  public resolveCombatExit(
-    outcome: 'victory' | 'defeat',
-    ctx: EngineContext,
-    runtimeContext?: Record<string, any>
-  ): void {
-    if (outcome === 'victory' && runtimeContext?.victoryPassageId) {
-      ctx.game.narrative.currentPassageId = runtimeContext.victoryPassageId;
-    } else {
-      ctx.hero.respawn();
-      ctx.game.narrative.currentPassageId = runtimeContext?.defeatPassageId || 'combat_defeat';
-    }
-    ctx.setActiveView('narrative');
-    ctx.saveState();
-  }
-
-  public handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void {
-    const added = ctx.hero.adjustMaterial(mat, amount);
-    if (added === 0 && ctx.hero.materialRule === 'total' && ctx.hero.totalMaterialsCount >= 5) {
-      ctx.setPendingMaterial(mat);
-    } else {
-      ctx.saveState();
-    }
-  }
-
-  public handleHeroDefeated(ctx: EngineContext): void {
-    ctx.hero.respawn();
-    ctx.game.narrative.currentPassageId = 'combat_defeat';
-    ctx.setActiveView('narrative');
-    ctx.saveState();
-  }
-}
-</file>
-
-<file path="src/controllers/OpenWorldController.ts">
-import type { GameModeController, EngineContext, CombatTriggerPayload, ReturnBannerDescriptor } from '../types/controller';
-import type { ActiveView } from '../types/game';
-import type { TrackedMaterial } from '../types/inventory';
-
-export class OpenWorldModeController implements GameModeController {
-  public readonly id = 'open_world';
-  public readonly label = 'Open World Mode';
-  public readonly defaultView: ActiveView = 'world_map';
-  public readonly allowInventoryEditing = false;
-
-  public getAccessibleViews(ctx: EngineContext): ActiveView[] {
-    const views: ActiveView[] = ['world_map'];
-    if (ctx.game.openWorld.currentPoiId) {
-      views.push('poi_node');
-      const region = ctx.regions[ctx.game.openWorld.currentRegionId];
-      const poi = region?.pointsOfInterest.find((p) => p.id === ctx.game.openWorld.currentPoiId);
-      const node = poi?.nodes[ctx.game.openWorld.currentNodeId || poi.entryNodeId];
-      if (node?.accessibleViews) {
-        views.push(...node.accessibleViews);
-      }
-    }
-    return views;
-  }
-
-  public canNavigateToView(targetView: ActiveView, ctx: EngineContext): boolean {
-    return this.getAccessibleViews(ctx).includes(targetView);
-  }
-
-  public getReturnBanner(ctx: EngineContext): ReturnBannerDescriptor | null {
-    if (ctx.game.activeView === 'world_map' || ctx.game.activeView === 'poi_node') {
-      return null;
-    }
-    if (ctx.game.openWorld.currentPoiId) {
-      return {
-        label: 'RETURN TO LOCATION',
-        action: () => ctx.setActiveView('poi_node'),
-      };
-    }
-    return {
-      label: 'RETURN TO WORLD MAP',
-      action: () => ctx.setActiveView('world_map'),
-    };
-  }
-
-  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
-    ctx.setActiveView('combat');
-  }
-
-  public resolveCombatExit(outcome: 'victory' | 'defeat', ctx: EngineContext): void {
-    if (outcome === 'defeat') {
-      ctx.hero.respawn();
-      ctx.game.openWorld.currentPoiId = null;
-      ctx.game.openWorld.currentNodeId = null;
-      ctx.game.openWorld.counters.trekBonus = 0;
-      ctx.setActiveView('world_map');
-    } else {
-      ctx.setActiveView(ctx.game.openWorld.currentPoiId ? 'poi_node' : 'world_map');
-    }
-    ctx.saveState();
-  }
-
-  public handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void {
-    const added = ctx.hero.adjustMaterial(mat, amount);
-    if (added === 0 && ctx.hero.materialRule === 'total' && ctx.hero.totalMaterialsCount >= 5) {
-      ctx.setPendingMaterial(mat);
-    } else {
-      ctx.saveState();
-    }
-  }
-
-  public handleHeroDefeated(ctx: EngineContext): void {
-    ctx.hero.respawn();
-    ctx.game.openWorld.currentPoiId = null;
-    ctx.game.openWorld.currentNodeId = null;
-    ctx.game.openWorld.counters.trekBonus = 0;
-    ctx.setActiveView('world_map');
-    ctx.saveState();
-  }
-}
-</file>
-
-<file path="src/controllers/SandboxController.ts">
-import type { GameModeController, EngineContext, CombatTriggerPayload, ReturnBannerDescriptor } from '../types/controller';
-import type { ActiveView } from '../types/game';
-import type { TrackedMaterial } from '../types/inventory';
-
-export class SandboxModeController implements GameModeController {
-  public readonly id = 'sandbox';
-  public readonly label = 'Sandbox Mode';
-  public readonly defaultView: ActiveView = 'combat';
-  public readonly allowInventoryEditing = true;
-
-  public getAccessibleViews(): ActiveView[] {
-    return ['combat', 'forest', 'mining', 'crafting'];
-  }
-
-  public canNavigateToView(targetView: ActiveView): boolean {
-    return this.getAccessibleViews().includes(targetView);
-  }
-
-  public getReturnBanner(): ReturnBannerDescriptor | null {
-    return null;
-  }
-
-  public onActivityCleared(type: 'forest' | 'mining', ctx: EngineContext): void {
-    if (type === 'forest') ctx.game.sandbox.forestCleared += 1;
-    if (type === 'mining') ctx.game.sandbox.mineCleared += 1;
-    ctx.saveState();
-  }
-
-  public initiateCombat(_payload: CombatTriggerPayload, ctx: EngineContext): void {
-    ctx.setActiveView('combat');
-  }
-
-  public resolveCombatExit(_outcome: 'victory' | 'defeat', ctx: EngineContext): void {
-    ctx.setActiveView('combat');
-  }
-
-  public handleGainMaterial(mat: TrackedMaterial, amount: number, ctx: EngineContext): void {
-    const added = ctx.hero.adjustMaterial(mat, amount);
-    if (added === 0 && ctx.hero.materialRule === 'total' && ctx.hero.totalMaterialsCount >= 5) {
-      ctx.setPendingMaterial(mat);
-    } else {
-      ctx.saveState();
-    }
-  }
-
-  public handleHeroDefeated(ctx: EngineContext): void {
-    ctx.hero.respawn();
-    ctx.saveState();
-  }
-}
-</file>
-
-<file path="src/data/regions.ts">
-import type { Region } from '../types/world';
-import type { Passage } from '../types/narrative';
-import { STORY_PASSAGES } from './storyPassages';
-
-export const CUSTOM_WORLD_STORAGE_KEY = 'minecraft_custom_world_dataset';
-
-export interface OpenWorldPackage {
-  regions: Record<string, Region>;
-  passages: Record<string, Passage>;
-}
-
-export const REGIONS: Record<string, Region> = {
-  plains_settlement: {
-    id: 'plains_settlement',
-    name: 'Riverwood Vale',
-    description: 'A rustic timber settlement resting in a river gorge beneath snowy mountain peaks.',
-    biome: 'plains',
-    adjacentRegionIds: ['bleak_falls_pass'],
-    dangerLevel: 1,
-    encounterTable: [
-      { mob: 'Spider', rollRange: [1, 3], label: 'River Spider' },
-      { mob: 'Zombie', rollRange: [4, 6], label: 'Wandering Bandit' },
-    ],
-    pointsOfInterest: [
-      {
-        id: 'riverwood_village',
-        name: 'Riverwood Settlement',
-        description: 'A cluster of timber dwellings, a lumber mill, and an open stone forge.',
-        entryNodeId: 'town_square',
-        hidden: false,
-        nodes: {
-          town_square: {
-            id: 'town_square',
-            title: 'Village Crossroads',
-            description: 'The sawmill wheel turns steadily in the river. Down the gravel path stands the general merchant and local forge.',
-            actions: [],
-            exits: [
-              { targetNodeId: 'trader_shop', label: 'Enter Riverwood Trader' },
-              { targetNodeId: 'blacksmith_forge', label: 'Approach Blacksmith Anvil' },
-              { exitToRegion: true, label: 'Head out to the wilderness road' },
-            ],
-            questHooks: [],
-          },
-          trader_shop: {
-            id: 'trader_shop',
-            title: 'Riverwood Trader',
-            description: 'Counter shelves filled with dried rations and mining supplies. The merchant mutters about a stolen family heirloom.',
-            exits: [
-              { targetNodeId: 'town_square', label: 'Step outside to the village path' },
-            ],
-            actions: [],
-            questHooks: [
-              {
-                id: 'lucan_quest_hook',
-                questId: 'golden_claw',
-                label: 'Inquire about the bandit break-in',
-                passageId: 'abandoned_shack',
-                condition: {
-                  type: 'binary',
-                  op: '!=',
-                  left: { type: 'get', path: 'flags.golden_claw_recovered' },
-                  right: { type: 'literal', value: true },
-                },
-              },
-            ],
-          },
-          blacksmith_forge: {
-            id: 'blacksmith_forge',
-            title: 'Village Forge',
-            description: 'A hearth with hot coals and a heavy anvil. Tools and iron tongs hang ready.',
-            accessibleViews: ['crafting'],
-            exits: [
-              { targetNodeId: 'town_square', label: 'Back to the crossroads' },
-            ],
-            actions: [],
-            questHooks: [],
-          },
-        },
+export const EQUIPMENT_DEFINITIONS: EquipmentConfig[] = [
+  // Weapons
+  { name: 'Wooden Sword', type: 'weapon', attack: 1, damage: 2 },
+  { name: 'Stone Sword', type: 'weapon', attack: 2, damage: 2 },
+  { name: 'Iron Sword', type: 'weapon', attack: 3, damage: 6 },
+  { name: 'Diamond Sword', type: 'weapon', attack: 4, damage: 8 },
+  { name: 'Enchanted Iron Axe', type: 'weapon', attack: 4, damage: 6 },
+  {
+    name: 'Bow',
+    type: 'weapon',
+    attack: 2,
+    damage: 1,
+    description: 'Deals +2 bonus DMG on Turn 1',
+    hooks: {
+      onDealDamage: (ctx: CombatContext) => {
+        if (ctx.combatState.turn === 1 && ctx.roundState.hits > 0) {
+          ctx.roundState.heroDamageInstances.push({
+            amount: ctx.roundState.hits * 2,
+            source: 'Bow (First Strike)',
+            appliesArmor: false,
+          });
+          ctx.roundState.messages.push({
+            type: 'notice',
+            text: '🏹 Bow: First attack deals +2 bonus Damage per hit!',
+          });
+        }
       },
-      {
-        id: 'hidden_hunter_blind',
-        name: 'Abandoned Hunter Blind',
-        description: 'A hidden lean-to tucked deep into the treeline along the riverbank.',
-        entryNodeId: 'hunter_blind_camp',
-        hidden: true,
-        minTrekTotal: 4,
-        discoveryLog: 'Parted thick riverside ferns and uncovered an old hunter campsite!',
-        nodes: {
-          hunter_blind_camp: {
-            id: 'hunter_blind_camp',
-            title: 'Hunter Blind Shelter',
-            description: 'An old spruce shelter containing salvaged skins, seasoned logs, and a cold firepit.',
-            accessibleViews: ['forest'],
-            actions: [
-              {
-                id: 'gather_timber',
-                label: 'Chop dry firewood (+2 Wood)',
-                type: 'gather',
-                resourceGain: { material: 'Wood', count: 2 },
-              },
-            ],
-            exits: [
-              { exitToRegion: true, label: 'Return to the wilderness trail' },
-            ],
-            questHooks: [],
-          },
-        },
-      },
-    ],
+    },
   },
-  bleak_falls_pass: {
-    id: 'bleak_falls_pass',
-    name: 'Bleak Falls Pass',
-    description: 'A steep mountain road climbing into freezing mist and ancient stone ruins.',
-    biome: 'mountains',
-    adjacentRegionIds: ['plains_settlement'],
-    dangerLevel: 3,
-    encounterTable: [
-      { mob: 'Skeleton', rollRange: [1, 3], label: 'Draugr Sentry' },
-      { mob: 'Cave Spider', rollRange: [4, 6], label: 'Frostbite Spider' },
-    ],
-    pointsOfInterest: [
-      {
-        id: 'mountain_watchtower',
-        name: 'Overlook Watchtower',
-        description: 'A ruined stone watchtower surveying the mountain ascent.',
-        entryNodeId: 'watchtower_ground',
-        hidden: true,
-        minTrekTotal: 4,
-        discoveryLog: 'Spotted a mossy stone lookout tower standing high above the road!',
-        nodes: {
-          watchtower_ground: {
-            id: 'watchtower_ground',
-            title: 'Watchtower Ground Floor',
-            description: 'A shattered wooden door opens onto a flagstone floor strewn with bandit supplies.',
-            actions: [
-              { id: 'patrol_fight', label: 'Engage Bandit Scout', type: 'combat', mobName: 'Zombie' },
-            ],
-            exits: [
-              { exitToRegion: true, label: 'Descend to mountain path' },
-            ],
-            questHooks: [],
-          },
-        },
+  { name: 'Crossbow', type: 'weapon', attack: 2, damage: 2 },
+  {
+    name: 'Trident',
+    type: 'weapon',
+    attack: 2,
+    damage: 3,
+    description: 'Single-die attack deals +1 bonus DMG',
+    hooks: {
+      onDealDamage: (ctx: CombatContext) => {
+        if (ctx.roundState.diceCount === 1 && ctx.roundState.hits > 0) {
+          ctx.roundState.heroDamageInstances.push({
+            amount: ctx.roundState.hits * 1,
+            source: 'Trident (Single Die Focus)',
+            appliesArmor: false,
+          });
+          ctx.roundState.messages.push({
+            type: 'notice',
+            text: '🔱 Trident: Single-die thrust deals +1 bonus Damage!',
+          });
+        }
       },
-      {
-        id: 'bleak_falls_barrow',
-        name: 'Bleak Falls Barrow',
-        description: 'A massive ancient stone temple embedded into the frozen mountain face.',
-        entryNodeId: 'barrow_vestibule',
-        hidden: true,
-        minTrekTotal: 8,
-        discoveryLog: 'Pushed past the blizzard ridge and discovered the colossal entrance to Bleak Falls Barrow!',
-        nodes: {
-          barrow_vestibule: {
-            id: 'barrow_vestibule',
-            title: 'Temple Vestibule',
-            description: 'Carved stone arches draped in webs. The freezing wind dies down as you step inside.',
-            accessibleViews: ['mining'],
-            actions: [
-              {
-                id: 'excavate_rubble',
-                label: 'Excavate loose rubble (+1 Stone)',
-                type: 'gather',
-                resourceGain: { material: 'Stone', count: 1 },
-              },
-            ],
-            exits: [
-              { targetNodeId: 'crypt_inner_gate', label: 'Descend into the catacombs' },
-              { exitToRegion: true, label: 'Exit back to mountain pass' },
-            ],
-            questHooks: [],
-          },
-          crypt_inner_gate: {
-            id: 'crypt_inner_gate',
-            title: 'Reinforced Crypt Gate',
-            description: 'A heavy iron portcullis blocks passage into the inner burial chambers.',
-            actions: [
-              { id: 'gate_sentinel', label: 'Fight Gate Guardian', type: 'combat', mobName: 'Skeleton' },
-            ],
-            exits: [
-              { targetNodeId: 'barrow_vestibule', label: 'Retreat to vestibule' },
-            ],
-            questHooks: [],
-          },
-        },
-      },
-    ],
+    },
   },
-};
 
-export function validateWorldPackage(raw: unknown): OpenWorldPackage | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const candidate = raw as Record<string, any>;
+  // Armor
+  { name: 'Leather Armor', type: 'armor', armorValue: 1 },
+  { name: 'Iron Armor', type: 'armor', armorValue: 2 },
+  { name: 'Diamond Armor', type: 'armor', armorValue: 4 },
 
-  const regionsObj = candidate.regions || candidate;
-  if (!regionsObj || typeof regionsObj !== 'object') return null;
+  // Pickaxes
+  { name: 'Wooden Pickaxe', type: 'pickaxe', diceBonus: 1, description: 'Rolls 1 die on Mining Table' },
+  { name: 'Stone Pickaxe', type: 'pickaxe', diceBonus: 2, description: 'Rolls 2 dice, pick one' },
+  { name: 'Iron Pickaxe', type: 'pickaxe', diceBonus: 3, description: 'Rolls 3 dice, pick one' },
+  { name: 'Diamond Pickaxe', type: 'pickaxe', diceBonus: 4, description: 'Rolls 4 dice, pick one; can mine Obsidian' },
 
-  for (const reg of Object.values(regionsObj)) {
-    if (
-      typeof (reg as any).id !== 'string' ||
-      typeof (reg as any).name !== 'string' ||
-      typeof (reg as any).description !== 'string' ||
-      !Array.isArray((reg as any).pointsOfInterest)
-    ) {
-      return null;
-    }
-  }
+  // Key Items
+  {
+    name: 'Totem of Undying',
+    type: 'key',
+    description: 'Heals 20 HP upon fatal defeat',
+    hooks: {
+      onDeath: (ctx: CombatContext) => {
+        if (ctx.roundState.dyingEntity === ctx.combatState.hero) {
+          ctx.combatState.hero.resetHealth();
+          ctx.roundState.preventDeath = true;
+          ctx.combatState.hero.removeEquipment('Totem of Undying');
+          ctx.roundState.messages.push({
+            type: 'special',
+            text: '✨ TOTEM USED! The Totem of Undying shattered, restoring you to full 20 HP!',
+          });
+        }
+      },
+    },
+  },
+  { name: 'Torch', type: 'key', description: 'Explore dark mines and caves' },
+  { name: 'Bucket', type: 'key', description: 'Turns lava pools into solid stone' },
+  { name: 'Boat', type: 'key', description: 'Traverse rivers and oceans safely' },
+  { name: 'TNT', type: 'key', description: 'Excavate sealed pathways' },
+  { name: 'Compass', type: 'key', description: '+1 Die on Wilderness Exploration' },
+  { name: 'World Map', type: 'key', description: '+1 Die on Wilderness Exploration' },
+];
 
-  const passagesObj = candidate.passages || STORY_PASSAGES;
-  return {
-    regions: regionsObj as Record<string, Region>,
-    passages: passagesObj as Record<string, Passage>,
-  };
+export const EQUIPMENT_CATALOG: Record<string, Item> = Object.fromEntries(
+  EQUIPMENT_DEFINITIONS.map((def) => [def.name, new Item(def)])
+);
+
+export function getEquipmentItem(name: string): Item | undefined {
+  return EQUIPMENT_CATALOG[name];
 }
 
-export function getInitialWorldPackage(): OpenWorldPackage {
-  const custom = localStorage.getItem(CUSTOM_WORLD_STORAGE_KEY);
-  if (custom) {
-    try {
-      const parsed = JSON.parse(custom);
-      const validated = validateWorldPackage(parsed);
-      if (validated) return validated;
-    } catch {
-      console.warn('Failed to parse custom world package. Falling back to default.');
-    }
-  }
-  return {
-    regions: JSON.parse(JSON.stringify(REGIONS)),
-    passages: JSON.parse(JSON.stringify(STORY_PASSAGES)),
-  };
-}
+export const CRAFTING_RECIPES: CraftingRecipe[] = [
+  { name: 'Wooden Sword', type: 'weapon', cost: { Wood: 1 }, desc: '1 ATK | 2 DMG' },
+  { name: 'Stone Sword', type: 'weapon', cost: { Wood: 1, Stone: 2 }, desc: '2 ATK | 2 DMG' },
+  { name: 'Iron Sword', type: 'weapon', cost: { Wood: 1, Iron: 2 }, desc: '3 ATK | 6 DMG' },
+  { name: 'Diamond Sword', type: 'weapon', cost: { Wood: 1, Diamond: 2 }, desc: '4 ATK | 8 DMG' },
+  { name: 'Bow', type: 'weapon', cost: { Wood: 1, String: 3 }, desc: '2 ATK | 1 DMG (3 DMG Turn 1)' },
+  { name: 'Crossbow', type: 'weapon', cost: { Wood: 1, Iron: 1, String: 1 }, desc: '2 ATK | 2 DMG' },
+  { name: 'Leather Armor', type: 'armor', cost: { Leather: 4 }, desc: '1 ARM (Flat absorption)' },
+  { name: 'Iron Armor', type: 'armor', cost: { Iron: 4 }, desc: '2 ARM (Flat absorption)' },
+  { name: 'Diamond Armor', type: 'armor', cost: { Diamond: 4 }, desc: '4 ARM (Flat absorption)' },
+  { name: 'Stone Pickaxe', type: 'pickaxe', cost: { Wood: 1, Stone: 2 }, desc: 'Roll 2 dice on Mining Table' },
+  { name: 'Iron Pickaxe', type: 'pickaxe', cost: { Wood: 1, Iron: 2 }, desc: 'Roll 3 dice on Mining Table' },
+  { name: 'Diamond Pickaxe', type: 'pickaxe', cost: { Wood: 1, Diamond: 2 }, desc: 'Roll 4 dice & mine Obsidian' },
+  { name: 'Torch', type: 'key', cost: { Wood: 1, Coal: 1 }, desc: 'Explore dark mine shafts' },
+  { name: 'Bucket', type: 'key', cost: { Iron: 3 }, desc: 'Cool hazardous lava pools' },
+  { name: 'Boat', type: 'key', cost: { Wood: 5 }, desc: 'Navigate open waters' },
+  { name: 'TNT', type: 'key', cost: { Gunpowder: 3 }, desc: 'Blast away sealed obstacles' },
+  { name: 'Compass', type: 'key', cost: { Iron: 4, Coal: 1 }, desc: '+1 Wilderness Exploration Die' },
+  { name: 'World Map', type: 'key', cost: { Leather: 2, Wood: 2 }, desc: '+1 Wilderness Exploration Die' },
+];
 </file>
 
-<file path="src/engine/travelResolvers.ts">
+<file path="src/types/combat.ts">
+import type { Entity } from '../models/Entity';
 import type { Character } from '../models/Character';
-import type { OpenWorldProgression } from '../types/game';
-import type { TravelRequest, TravelOutcome, TravelResolver, Region } from '../types/world';
-import { REGIONS } from '../data/regions';
+import type { Mob } from '../models/Mob';
 
-export class StandardTravelResolver implements TravelResolver {
-  public canTravel(
-    _hero: Character,
-    state: OpenWorldProgression,
-    req: TravelRequest,
-    regions: Record<string, Region> = REGIONS
-  ): { allowed: boolean; reason?: string } {
-    const fromRegion = regions[req.fromRegionId];
-    if (!fromRegion) return { allowed: false, reason: 'Unknown origin region.' };
-    const isAdjacent = fromRegion.adjacentRegionIds.includes(req.toRegionId);
-    const isDiscovered = state.discoveredRegions.includes(req.toRegionId);
-    
-    if (!isAdjacent && !isDiscovered) {
-      return { allowed: false, reason: 'Destination is not adjacent or discovered.' };
-    }
-    return { allowed: true };
-  }
+export interface DamageInstance {
+  amount: number;
+  source: string;
+  appliesArmor: boolean;
+}
 
-  public resolveTravel(
-    _hero: Character,
-    state: OpenWorldProgression,
-    req: TravelRequest,
-    regions: Record<string, Region> = REGIONS
-  ): TravelOutcome {
-    const targetRegion = regions[req.toRegionId];
-    if (!targetRegion) {
-      return { success: false, logMessages: ['Unknown destination region.'] };
-    }
+export interface DamageResult {
+  appliedTotal: number;
+  details: string[];
+}
 
-    const roll = Math.floor(Math.random() * 6) + 1;
-    const logs: string[] = [];
+export interface CombatMessage {
+  type: 'hit' | 'miss' | 'special' | 'notice';
+  text: string;
+}
 
-    state.counters.travelSteps = (state.counters.travelSteps || 0) + 1;
-    state.counters.trekBonus = 0;
+export interface RoundState {
+  diceCount: number;
+  rolls: number[];
+  hits: number;
+  misses: number;
+  missRolls: number[];
+  matchingHits: number;
+  matchingMisses: number;
+  heroDamageInstances: DamageInstance[];
+  mobDamageInstances: DamageInstance[];
+  messages: CombatMessage[];
+  preventDeath: boolean;
+  dyingEntity: Entity | null;
+  vexBanishedThisRound?: boolean;
+  pendingCritHitPick?: boolean; // True when quadruples occur on hits
+}
 
-    if (roll <= 2 && targetRegion.encounterTable?.length) {
-      const mobEntry = targetRegion.encounterTable[
-        Math.floor(Math.random() * targetRegion.encounterTable.length)
-      ];
-      logs.push(`Ambush on the road to ${targetRegion.name}! A ${mobEntry.mob} attacks!`);
-      return {
-        success: false,
-        combatMob: mobEntry.mob,
-        logMessages: logs,
-      };
-    }
+export interface CombatState {
+  turn: number;
+  effects: CombatLifecycleHooks[];
+  hero: Character;
+  mob: Mob;
+  ignoreArmor: boolean;
+  heroDmgPenalty: number;
+  heroDmgMultiplier?: number;
+  friendlyMobJoined?: boolean;
+  guaranteedLootRoll?: number;
+  pendingDiamondReward?: number;
+}
 
-    logs.push(`Traveled safely to ${targetRegion.name}.`);
-    if (!state.discoveredRegions.includes(req.toRegionId)) {
-      state.discoveredRegions.push(req.toRegionId);
-      logs.push(`Discovered new region: ${targetRegion.name}!`);
-    }
+export interface CombatContext {
+  combatState: CombatState;
+  roundState: RoundState;
+}
 
-    state.currentRegionId = req.toRegionId;
-    state.currentPoiId = null;
-    state.currentNodeId = null;
+export type CombatHook = (ctx: CombatContext) => void;
 
-    return {
-      success: true,
-      logMessages: logs,
-    };
-  }
+export interface CombatLifecycleHooks {
+  onCombatStart?: CombatHook;
+  onRoundStart?: CombatHook;
+  onRollEvaluated?: CombatHook;
+  onDealDamage?: CombatHook;
+  onReceiveDamage?: CombatHook;
+  onRoundEnd?: CombatHook;
+  onDeath?: CombatHook;
+  onCombatEnd?: CombatHook;
 }
 </file>
 
 <file path="src/types/game.ts">
-import type { SerializedCharacter } from '../models/Character';
+import type { CharacterConfig } from '../models/Character';
 
 export type GameModeId = 'sandbox' | 'narrative' | 'open_world';
 
@@ -1568,53 +1584,8 @@ export interface GameProgressionState {
 
 export interface GameSaveData {
   version: number;
-  character: SerializedCharacter;
+  character: CharacterConfig;
   game: GameProgressionState;
-}
-</file>
-
-<file path="src/types/inventory.ts">
-import type { CombatLifecycleHooks } from './combat';
-
-export type TrackedMaterial = 
-  | 'Wood' 
-  | 'Stone' 
-  | 'Iron' 
-  | 'Coal' 
-  | 'Diamond' 
-  | 'Leather' 
-  | 'String' 
-  | 'Wheat' 
-  | 'Gunpowder' 
-  | 'Slimeball'
-  | 'Fish';
-
-export type EquipmentType = 'weapon' | 'armor' | 'pickaxe' | 'key';
-export type InventoryRule = 'total' | 'stack';
-
-export interface EquippedSlots {
-  weapon: string | null;
-  armor: string | null;
-  pickaxe: string | null;
-  key: string | null;
-}
-
-export interface EquipmentConfig {
-  name: string;
-  type: EquipmentType;
-  attack?: number;
-  damage?: number;
-  armorValue?: number;
-  diceBonus?: number;
-  description?: string;
-  hooks?: CombatLifecycleHooks;
-}
-
-export interface CraftingRecipe {
-  name: string;
-  type: EquipmentType;
-  cost: Partial<Record<TrackedMaterial, number>>;
-  desc: string;
 }
 </file>
 
@@ -2757,135 +2728,271 @@ export const BESTIARY: MobConfig[] = [
 ];
 </file>
 
-<file path="src/data/recipes.ts">
-import { Item } from '../models/Item';
-import type { EquipmentConfig, CraftingRecipe, TrackedMaterial } from '../types/inventory';
-import type { CombatContext } from '../types/combat';
+<file path="src/data/icons.ts">
+export const ICONS: Record<string, string> = {
+  hero: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="7" height="7" fill="#000"/><rect x="1" y="1" width="5" height="2" fill="#4a3219"/><rect x="1" y="3" width="5" height="3" fill="#d39c7e"/><rect x="1" y="3" width="2" height="1" fill="#fff"/><rect x="2" y="3" width="1" height="1" fill="#283593"/><rect x="4" y="3" width="2" height="1" fill="#fff"/><rect x="4" y="3" width="1" height="1" fill="#283593"/></svg>`,
+  heartFull: `<svg class="pixel-icon" viewBox="0 0 8 8"><path d="M 1,0 H 3 V 1 H 4 V 1 0 H 6 V 1 H 7 V 4 H 6 V 5 H 5 V 6 H 4 V 7 H 3 V 6 H 2 V 5 H 1 V 4 H 0 V 1 h 1 z"/><path d="M 1,1 V 4 H 2 V 5 H 3 V 6 H 4 V 5 H 5 V 4 H 6 V 1 H 4 V 2 H 3 V 1 Z" style="fill:#e41b1b"/></svg>`,
+  heartEmpty: `<svg class="pixel-icon" viewBox="0 0 8 8"><path d="M 1,0 V 1 H 3 V 0 Z M 3,1 V 2 H 4 V 1 Z M 4,1 H 6 V 0 H 4 Z M 6,1 V 4 H 7 V 1 Z M 6,4 H 5 V 5 H 6 Z M 5,5 H 4 V 6 H 5 Z M 4,6 H 3 V 7 H 4 Z M 3,6 V 5 H 2 V 6 Z M 2,5 V 4 H 1 V 5 Z M 1,4 V 1 H 0 v 3 z"/></svg>`,
+  sword: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000000" d="M 0,3 H 3 V 2 H 4 V 1 H 5 V 0 H 8 V 3 H 7 V 4 H 6 V 5 H 5 V 8 H 3 V 7 H 2 V 8 H 0 V 6 H 1 V 5 H 0 Z" /><rect style="fill:#6e4e2e" width="1" height="1" x="1" y="6" /><path style="fill:#d6d8d9" d="M 5,1 V 3 H 7 V 1 Z M 5,3 H 4 V 4 H 5 Z M 2,5 V 6 H 3 V 5 Z" /><path style="fill:#a9afb2" d="M 4 2 L 4 3 L 5 3 L 5 2 L 4 2 z M 5 3 L 5 4 L 6 4 L 6 3 L 5 3 z M 1 4 L 1 5 L 2 5 L 2 4 L 1 4 z M 3 4 L 3 5 L 4 5 L 4 4 L 3 4 z M 3 6 L 3 7 L 4 7 L 4 6 L 3 6 z " /><path style="fill:#4a4d4f" d="M 2 4 L 2 5 L 3 5 L 3 4 L 2 4 z M 3 5 L 3 6 L 4 6 L 4 5 L 3 5 z " /><path style="fill:#858a8b" d="M 3 3 L 3 4 L 4 4 L 4 3 L 3 3 z M 4 4 L 4 5 L 5 5 L 5 4 L 4 4 z " /></svg>`,
+  tnt: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="7" height="7" fill="#000"/><rect x="1" y="1" width="5" height="5" fill="#d32f2f"/><rect x="1" y="2" width="5" height="3" fill="#f5f5f5"/><rect x="3" y="0" width="1" height="1" fill="#aaa"/></svg>`,
+  chestplate: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000000" d="M 0,0 V 4 H 1 V 7 H 2 V 8 H 5.9999999 V 7 h 1 V 4 h 1 V 0 h -3 V 1 H 3 V 0 Z" /><rect style="fill:#858a8b" width="4" height="1" x="2" y="6" /><path style="fill:#d6d8d9" d="M 1,1 V 3 H 2 V 5 H 6 V 3 H 7 V 1 H 5 V 2 H 3 V 1 Z" /><path style="fill:#a9afb2" d="M 2,5 V 6 H 3 V 7 H 5 V 6 H 6 V 5 Z M 2,3 H 3 V 4 H 2 Z M 5,3 H 6 V 4 H 5 Z M 5,1 H 6 V 2 H 5 Z M 2,1 H 3 V 2 H 2 Z" /><rect style="fill:#f9fdfe" width="2" height="1" x="3" y="4" /></svg>`,
+  pickaxe: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000000" d="M 1,1 V 3 H 3 V 4 H 2 V 5 H 1 V 6 H 0 V 8 H 2 V 7 H 3 V 6 H 4 V 5 H 5 V 7 H 7 V 6 H 8 V 2 H 7 V 1 H 6 V 0 H 2 v 1 z" /><path style="fill:#4a4c50" d="M 4,2 H 6 V 4 H 4 Z" /><path style="fill:#8b6328" d="M 4,3 H 5 V 4 H 4 Z M 1,6 H 2 V 7 H 1 Z M 2,5 H 3 V 6 H 2 Z M 3,4 H 4 V 5 H 3 Z" /><path style="fill:#a8afb1" d="M 2 1 L 2 2 L 5 2 L 5 3 L 6 3 L 6 6 L 7 6 L 7 2 L 6 2 L 6 1 L 2 1 z " /><path style="fill:#d5d9d9" d="M 6,3 H 7 V 5 H 6 Z M 5,2 H 6 V 3 H 5 Z M 3,1 H 5 V 2 H 3 Z" /></svg>`,
+  bed: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000" d="M 0,1 V 6 H 3 V 5 H 4 V 6 H 7 V 1 Z"/><rect x="1" y="2" width="1" height="1" fill="#fff"/><rect x="2" y="2" width="4" height="1" fill="#d32f2f"/><rect x="1" y="3" width="5" height="1" fill="#5d4037"/><rect x="1" y="4" width="1" height="1" fill="#3e2723"/><rect x="5" y="4" width="1" height="1" fill="#3e2723"/></svg>`,
+  target: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="3" y="3" width="1" height="1" fill="#d32f2f"/><path d="M 2,0 V 1 H 3 V 2 H 4 V 1 H 5 V 0 Z M 5,1 V 2 H 6 V 1 Z M 6,2 V 3 H 5 V 4 H 6 V 5 H 7 V 2 Z M 6,5 H 5 V 6 H 6 Z M 5,6 H 4 V 5 H 3 V 6 H 2 V 7 H 5 Z M 2,6 V 5 H 1 V 6 Z M 1,5 V 4 H 2 V 3 H 1 V 2 H 0 V 5 Z M 1,2 H 2 V 1 H 1 Z"/></svg>`,
+  book: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="7" height="7" fill="#000"/><rect x="1" y="1" width="5" height="5" fill="#fff8e1"/><rect x="1" y="1" width="1" height="5" fill="#5d4037"/><rect x="5" y="3" width="1" height="1" fill="#fbc02d"/></svg>`,
+  spark: `<svg class="pixel-icon" viewBox="0 0 8 8"><path d="M 4,0 H 2 V 3 H 0 V 4 H 3 V 8 H 4 V 5 H 6 V 4 H 4 Z" fill="#f7d51d"/></svg>`,
+  tree: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="2" y="0" width="4" height="4" fill="#2e7d32"/><rect x="1" y="1" width="6" height="3" fill="#388e3c"/><rect x="3" y="4" width="2" height="4" fill="#5d4037"/></svg>`,
+  crafting: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="8" height="8" fill="#5d4037"/><rect x="1" y="1" width="6" height="6" fill="#8d6e63"/><rect x="1" y="1" width="3" height="3" fill="#d7ccc8"/><rect x="4" y="4" width="3" height="3" fill="#d7ccc8"/></svg>`,
+  gear: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="3" y="0" width="2" height="8" fill="#000"/><rect x="0" y="3" width="8" height="2" fill="#000"/><rect x="1" y="1" width="6" height="6" fill="#000"/><rect x="2" y="2" width="4" height="4" fill="#aaa"/><rect x="3" y="3" width="2" height="2" fill="#212529"/></svg>`
+};
 
-export const TRACKED_MATERIALS: TrackedMaterial[] = [
-  'Wood', 'Stone', 'Iron', 'Coal', 'Diamond',
-  'Leather', 'String', 'Wheat', 'Gunpowder', 'Slimeball', 'Fish'
-];
+export type IconName = keyof typeof ICONS;
+</file>
 
-export const EQUIPMENT_DEFINITIONS: EquipmentConfig[] = [
-  // Weapons
-  { name: 'Wooden Sword', type: 'weapon', attack: 1, damage: 2 },
-  { name: 'Stone Sword', type: 'weapon', attack: 2, damage: 2 },
-  { name: 'Iron Sword', type: 'weapon', attack: 3, damage: 6 },
-  { name: 'Diamond Sword', type: 'weapon', attack: 4, damage: 8 },
-  { name: 'Enchanted Iron Axe', type: 'weapon', attack: 4, damage: 6 },
-  {
-    name: 'Bow',
-    type: 'weapon',
-    attack: 2,
-    damage: 1,
-    description: 'Deals +2 bonus DMG on Turn 1',
-    hooks: {
-      onDealDamage: (ctx: CombatContext) => {
-        if (ctx.combatState.turn === 1 && ctx.roundState.hits > 0) {
-          ctx.roundState.heroDamageInstances.push({
-            amount: ctx.roundState.hits * 2,
-            source: 'Bow (First Strike)',
-            appliesArmor: false,
-          });
-          ctx.roundState.messages.push({
-            type: 'notice',
-            text: '🏹 Bow: First attack deals +2 bonus Damage per hit!',
-          });
-        }
-      },
-    },
-  },
-  { name: 'Crossbow', type: 'weapon', attack: 2, damage: 2 },
-  {
-    name: 'Trident',
-    type: 'weapon',
-    attack: 2,
-    damage: 3,
-    description: 'Single-die attack deals +1 bonus DMG',
-    hooks: {
-      onDealDamage: (ctx: CombatContext) => {
-        if (ctx.roundState.diceCount === 1 && ctx.roundState.hits > 0) {
-          ctx.roundState.heroDamageInstances.push({
-            amount: ctx.roundState.hits * 1,
-            source: 'Trident (Single Die Focus)',
-            appliesArmor: false,
-          });
-          ctx.roundState.messages.push({
-            type: 'notice',
-            text: '🔱 Trident: Single-die thrust deals +1 bonus Damage!',
-          });
-        }
-      },
-    },
-  },
+<file path="src/data/regions.ts">
+import type { Region } from '../types/world';
+import type { Passage } from '../types/narrative';
+import { STORY_PASSAGES } from './storyPassages';
+import { MobConfig } from '../models/Mob';
+import { BESTIARY } from './bestiary';
 
-  // Armor
-  { name: 'Leather Armor', type: 'armor', armorValue: 1 },
-  { name: 'Iron Armor', type: 'armor', armorValue: 2 },
-  { name: 'Diamond Armor', type: 'armor', armorValue: 4 },
+export const CUSTOM_WORLD_STORAGE_KEY = 'minecraft_custom_world_dataset';
 
-  // Pickaxes
-  { name: 'Wooden Pickaxe', type: 'pickaxe', diceBonus: 1, description: 'Rolls 1 die on Mining Table' },
-  { name: 'Stone Pickaxe', type: 'pickaxe', diceBonus: 2, description: 'Rolls 2 dice, pick one' },
-  { name: 'Iron Pickaxe', type: 'pickaxe', diceBonus: 3, description: 'Rolls 3 dice, pick one' },
-  { name: 'Diamond Pickaxe', type: 'pickaxe', diceBonus: 4, description: 'Rolls 4 dice, pick one; can mine Obsidian' },
-
-  // Key Items
-  {
-    name: 'Totem of Undying',
-    type: 'key',
-    description: 'Heals 20 HP upon fatal defeat',
-    hooks: {
-      onDeath: (ctx: CombatContext) => {
-        if (ctx.roundState.dyingEntity === ctx.combatState.hero) {
-          ctx.combatState.hero.resetHealth();
-          ctx.roundState.preventDeath = true;
-          ctx.combatState.hero.removeEquipment('Totem of Undying');
-          ctx.roundState.messages.push({
-            type: 'special',
-            text: '✨ TOTEM USED! The Totem of Undying shattered, restoring you to full 20 HP!',
-          });
-        }
-      },
-    },
-  },
-  { name: 'Torch', type: 'key', description: 'Explore dark mines and caves' },
-  { name: 'Bucket', type: 'key', description: 'Turns lava pools into solid stone' },
-  { name: 'Boat', type: 'key', description: 'Traverse rivers and oceans safely' },
-  { name: 'TNT', type: 'key', description: 'Excavate sealed pathways' },
-  { name: 'Compass', type: 'key', description: '+1 Die on Wilderness Exploration' },
-  { name: 'World Map', type: 'key', description: '+1 Die on Wilderness Exploration' },
-];
-
-export const EQUIPMENT_CATALOG: Record<string, Item> = Object.fromEntries(
-  EQUIPMENT_DEFINITIONS.map((def) => [def.name, new Item(def)])
-);
-
-export function getEquipmentItem(name: string): Item | undefined {
-  return EQUIPMENT_CATALOG[name];
+export interface OpenWorldPackage {
+  regions: Record<string, Region>;
+  passages: Record<string, Passage>;
+  mobs: Record<string, MobConfig>;
 }
 
-export const CRAFTING_RECIPES: CraftingRecipe[] = [
-  { name: 'Wooden Sword', type: 'weapon', cost: { Wood: 1 }, desc: '1 ATK | 2 DMG' },
-  { name: 'Stone Sword', type: 'weapon', cost: { Wood: 1, Stone: 2 }, desc: '2 ATK | 2 DMG' },
-  { name: 'Iron Sword', type: 'weapon', cost: { Wood: 1, Iron: 2 }, desc: '3 ATK | 6 DMG' },
-  { name: 'Diamond Sword', type: 'weapon', cost: { Wood: 1, Diamond: 2 }, desc: '4 ATK | 8 DMG' },
-  { name: 'Bow', type: 'weapon', cost: { Wood: 1, String: 3 }, desc: '2 ATK | 1 DMG (3 DMG Turn 1)' },
-  { name: 'Crossbow', type: 'weapon', cost: { Wood: 1, Iron: 1, String: 1 }, desc: '2 ATK | 2 DMG' },
-  { name: 'Leather Armor', type: 'armor', cost: { Leather: 4 }, desc: '1 ARM (Flat absorption)' },
-  { name: 'Iron Armor', type: 'armor', cost: { Iron: 4 }, desc: '2 ARM (Flat absorption)' },
-  { name: 'Diamond Armor', type: 'armor', cost: { Diamond: 4 }, desc: '4 ARM (Flat absorption)' },
-  { name: 'Stone Pickaxe', type: 'pickaxe', cost: { Wood: 1, Stone: 2 }, desc: 'Roll 2 dice on Mining Table' },
-  { name: 'Iron Pickaxe', type: 'pickaxe', cost: { Wood: 1, Iron: 2 }, desc: 'Roll 3 dice on Mining Table' },
-  { name: 'Diamond Pickaxe', type: 'pickaxe', cost: { Wood: 1, Diamond: 2 }, desc: 'Roll 4 dice & mine Obsidian' },
-  { name: 'Torch', type: 'key', cost: { Wood: 1, Coal: 1 }, desc: 'Explore dark mine shafts' },
-  { name: 'Bucket', type: 'key', cost: { Iron: 3 }, desc: 'Cool hazardous lava pools' },
-  { name: 'Boat', type: 'key', cost: { Wood: 5 }, desc: 'Navigate open waters' },
-  { name: 'TNT', type: 'key', cost: { Gunpowder: 3 }, desc: 'Blast away sealed obstacles' },
-  { name: 'Compass', type: 'key', cost: { Iron: 4, Coal: 1 }, desc: '+1 Wilderness Exploration Die' },
-  { name: 'World Map', type: 'key', cost: { Leather: 2, Wood: 2 }, desc: '+1 Wilderness Exploration Die' },
-];
+export const REGIONS: Record<string, Region> = {
+  plains_settlement: {
+    id: 'plains_settlement',
+    name: 'Riverwood Vale',
+    description: 'A rustic timber settlement resting in a river gorge beneath snowy mountain peaks.',
+    biome: 'plains',
+    adjacentRegionIds: ['bleak_falls_pass'],
+    dangerLevel: 1,
+    encounterTable: [
+      { mob: 'Spider', rollRange: [1, 3], label: 'River Spider' },
+      { mob: 'Zombie', rollRange: [4, 6], label: 'Wandering Bandit' },
+    ],
+    pointsOfInterest: [
+      {
+        id: 'riverwood_village',
+        name: 'Riverwood Settlement',
+        description: 'A cluster of timber dwellings, a lumber mill, and an open stone forge.',
+        entryNodeId: 'town_square',
+        hidden: false,
+        nodes: {
+          town_square: {
+            id: 'town_square',
+            title: 'Village Crossroads',
+            description: 'The sawmill wheel turns steadily in the river. Down the gravel path stands the general merchant and local forge.',
+            actions: [],
+            exits: [
+              { targetNodeId: 'trader_shop', label: 'Enter Riverwood Trader' },
+              { targetNodeId: 'blacksmith_forge', label: 'Approach Blacksmith Anvil' },
+              { exitToRegion: true, label: 'Head out to the wilderness road' },
+            ],
+            questHooks: [],
+          },
+          trader_shop: {
+            id: 'trader_shop',
+            title: 'Riverwood Trader',
+            description: 'Counter shelves filled with dried rations and mining supplies. The merchant mutters about a stolen family heirloom.',
+            exits: [
+              { targetNodeId: 'town_square', label: 'Step outside to the village path' },
+            ],
+            actions: [],
+            questHooks: [
+              {
+                id: 'lucan_quest_hook',
+                questId: 'golden_claw',
+                label: 'Inquire about the bandit break-in',
+                passageId: 'abandoned_shack',
+                condition: {
+                  type: 'binary',
+                  op: '!=',
+                  left: { type: 'get', path: 'flags.golden_claw_recovered' },
+                  right: { type: 'literal', value: true },
+                },
+              },
+            ],
+          },
+          blacksmith_forge: {
+            id: 'blacksmith_forge',
+            title: 'Village Forge',
+            description: 'A hearth with hot coals and a heavy anvil. Tools and iron tongs hang ready.',
+            accessibleViews: ['crafting'],
+            exits: [
+              { targetNodeId: 'town_square', label: 'Back to the crossroads' },
+            ],
+            actions: [],
+            questHooks: [],
+          },
+        },
+      },
+      {
+        id: 'hidden_hunter_blind',
+        name: 'Abandoned Hunter Blind',
+        description: 'A hidden lean-to tucked deep into the treeline along the riverbank.',
+        entryNodeId: 'hunter_blind_camp',
+        hidden: true,
+        minTrekTotal: 4,
+        discoveryLog: 'Parted thick riverside ferns and uncovered an old hunter campsite!',
+        nodes: {
+          hunter_blind_camp: {
+            id: 'hunter_blind_camp',
+            title: 'Hunter Blind Shelter',
+            description: 'An old spruce shelter containing salvaged skins, seasoned logs, and a cold firepit.',
+            accessibleViews: ['forest'],
+            actions: [
+              {
+                id: 'gather_timber',
+                label: 'Chop dry firewood (+2 Wood)',
+                type: 'gather',
+                resourceGain: { material: 'Wood', count: 2 },
+              },
+            ],
+            exits: [
+              { exitToRegion: true, label: 'Return to the wilderness trail' },
+            ],
+            questHooks: [],
+          },
+        },
+      },
+    ],
+  },
+  bleak_falls_pass: {
+    id: 'bleak_falls_pass',
+    name: 'Bleak Falls Pass',
+    description: 'A steep mountain road climbing into freezing mist and ancient stone ruins.',
+    biome: 'mountains',
+    adjacentRegionIds: ['plains_settlement'],
+    dangerLevel: 3,
+    encounterTable: [
+      { mob: 'Skeleton', rollRange: [1, 3], label: 'Draugr Sentry' },
+      { mob: 'Cave Spider', rollRange: [4, 6], label: 'Frostbite Spider' },
+    ],
+    pointsOfInterest: [
+      {
+        id: 'mountain_watchtower',
+        name: 'Overlook Watchtower',
+        description: 'A ruined stone watchtower surveying the mountain ascent.',
+        entryNodeId: 'watchtower_ground',
+        hidden: true,
+        minTrekTotal: 4,
+        discoveryLog: 'Spotted a mossy stone lookout tower standing high above the road!',
+        nodes: {
+          watchtower_ground: {
+            id: 'watchtower_ground',
+            title: 'Watchtower Ground Floor',
+            description: 'A shattered wooden door opens onto a flagstone floor strewn with bandit supplies.',
+            actions: [
+              { id: 'patrol_fight', label: 'Engage Bandit Scout', type: 'combat', mobName: 'Zombie' },
+            ],
+            exits: [
+              { exitToRegion: true, label: 'Descend to mountain path' },
+            ],
+            questHooks: [],
+          },
+        },
+      },
+      {
+        id: 'bleak_falls_barrow',
+        name: 'Bleak Falls Barrow',
+        description: 'A massive ancient stone temple embedded into the frozen mountain face.',
+        entryNodeId: 'barrow_vestibule',
+        hidden: true,
+        minTrekTotal: 8,
+        discoveryLog: 'Pushed past the blizzard ridge and discovered the colossal entrance to Bleak Falls Barrow!',
+        nodes: {
+          barrow_vestibule: {
+            id: 'barrow_vestibule',
+            title: 'Temple Vestibule',
+            description: 'Carved stone arches draped in webs. The freezing wind dies down as you step inside.',
+            accessibleViews: ['mining'],
+            actions: [
+              {
+                id: 'excavate_rubble',
+                label: 'Excavate loose rubble (+1 Stone)',
+                type: 'gather',
+                resourceGain: { material: 'Stone', count: 1 },
+              },
+            ],
+            exits: [
+              { targetNodeId: 'crypt_inner_gate', label: 'Descend into the catacombs' },
+              { exitToRegion: true, label: 'Exit back to mountain pass' },
+            ],
+            questHooks: [],
+          },
+          crypt_inner_gate: {
+            id: 'crypt_inner_gate',
+            title: 'Reinforced Crypt Gate',
+            description: 'A heavy iron portcullis blocks passage into the inner burial chambers.',
+            actions: [
+              { id: 'gate_sentinel', label: 'Fight Gate Guardian', type: 'combat', mobName: 'Skeleton' },
+            ],
+            exits: [
+              { targetNodeId: 'barrow_vestibule', label: 'Retreat to vestibule' },
+            ],
+            questHooks: [],
+          },
+        },
+      },
+    ],
+  },
+};
+
+export function validateWorldPackage(raw: unknown): OpenWorldPackage | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const candidate = raw as Record<string, any>;
+
+  const regionsObj = candidate.regions || candidate;
+  if (!regionsObj || typeof regionsObj !== 'object') return null;
+
+  for (const reg of Object.values(regionsObj)) {
+    if (
+      typeof (reg as any).id !== 'string' ||
+      typeof (reg as any).name !== 'string' ||
+      typeof (reg as any).description !== 'string' ||
+      !Array.isArray((reg as any).pointsOfInterest)
+    ) {
+      return null;
+    }
+  }
+
+  const passagesObj = candidate.passages || STORY_PASSAGES;
+
+  const mobsObj =
+    candidate.mobs && typeof candidate.mobs === 'object' && !Array.isArray(candidate.mobs)
+      ? candidate.mobs
+      : Object.fromEntries(BESTIARY.map((m) => [m.id, JSON.parse(JSON.stringify(m))]));
+
+  return {
+    regions: regionsObj as Record<string, Region>,
+    passages: passagesObj as Record<string, Passage>,
+    mobs: mobsObj as Record<string, MobConfig>,
+  };
+}
+
+export function getInitialWorldPackage(): OpenWorldPackage {
+  const custom = localStorage.getItem(CUSTOM_WORLD_STORAGE_KEY);
+  if (custom) {
+    try {
+      const parsed = JSON.parse(custom);
+      const validated = validateWorldPackage(parsed);
+      if (validated) return validated;
+    } catch {
+      console.warn('Failed to parse custom world package. Falling back to default.');
+    }
+  }
+  return {
+    regions: JSON.parse(JSON.stringify(REGIONS)),
+    passages: JSON.parse(JSON.stringify(STORY_PASSAGES)),
+    mobs: Object.fromEntries(BESTIARY.map((m) => [m.id, JSON.parse(JSON.stringify(m))]))
+  };
+}
 </file>
 
 <file path="src/data/storyPassages.ts">
@@ -3584,12 +3691,363 @@ export function getInitialStoryPassages(): Record<string, Passage> {
 }
 </file>
 
+<file path="src/engine/CombatEngine.ts">
+import type { Character } from '../models/Character';
+import type { Mob } from '../models/Mob';
+import type { Entity } from '../models/Entity';
+import type { CombatContext, CombatLifecycleHooks, DamageResult } from '../types/combat';
+
+export interface RoundResult {
+  status: 'ongoing' | 'victory' | 'defeat';
+  heroDmgRes?: DamageResult;
+  mobDmgRes?: DamageResult;
+}
+
+export class CombatEngine {
+  public ctx: CombatContext;
+
+  constructor(hero: Character, mob: Mob) {
+    this.ctx = {
+      combatState: {
+        turn: 0,
+        effects: [],
+        hero,
+        mob,
+        ignoreArmor: false,
+        heroDmgPenalty: 0,
+      },
+      roundState: {
+        diceCount: 1,
+        rolls: [],
+        hits: 0,
+        misses: 0,
+        missRolls: [],
+        matchingHits: 0,
+        matchingMisses: 0,
+        heroDamageInstances: [],
+        mobDamageInstances: [],
+        messages: [],
+        preventDeath: false,
+        dyingEntity: null,
+      },
+    };
+  }
+
+  public dispatchHook(hookName: keyof CombatLifecycleHooks): void {
+    const listeners: (CombatLifecycleHooks | undefined)[] = [
+      this.ctx.combatState.hero,
+      this.ctx.combatState.mob,
+      ...this.ctx.combatState.effects,
+    ];
+
+    for (const listener of listeners) {
+      listener?.[hookName]?.(this.ctx);
+    }
+  }
+
+  public initCombat(): void {
+    this.dispatchHook('onCombatStart');
+  }
+
+  public executeRound(diceCount: number, targetDef: number, customRolls?: number[]): RoundResult {
+    this.ctx.combatState.turn++;
+    this.ctx.roundState = {
+      diceCount: Math.min(this.ctx.combatState.hero.attack, Math.max(1, diceCount)),
+      rolls: [],
+      hits: 0,
+      misses: 0,
+      missRolls: [],
+      matchingHits: 0,
+      matchingMisses: 0,
+      heroDamageInstances: [],
+      mobDamageInstances: [],
+      messages: [],
+      preventDeath: false,
+      dyingEntity: null,
+    };
+
+    this.dispatchHook('onRoundStart');
+    if (this.ctx.combatState.hero.hearts <= 0 && !this.handleDeath(this.ctx.combatState.hero)) {
+      return { status: 'defeat' };
+    }
+
+    // Pass custom rolls to dice evaluation
+    this.rollDice(targetDef, customRolls);
+    this.dispatchHook('onRollEvaluated');
+
+    if (this.ctx.roundState.matchingMisses >= 4) {
+      this.ctx.combatState.hero.hearts = 0;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '💀 CRITICAL MISS (QUADRUPLE): Complete failure! Instant Loss!',
+      });
+      this.dispatchHook('onCombatEnd');
+      return { status: 'defeat' };
+    }
+
+    if (this.ctx.roundState.matchingHits === 3) {
+      const roll = Math.floor(Math.random() * 6) + 1;
+      this.applyCritHitEffect(roll);
+    } else if (this.ctx.roundState.matchingHits >= 4) {
+      this.ctx.roundState.pendingCritHitPick = true;
+    }
+
+    if (this.ctx.roundState.matchingMisses === 3) {
+      const roll = Math.floor(Math.random() * 6) + 1;
+      this.applyCritMissEffect(roll);
+    }
+
+    this.applyStandardDamages();
+    this.dispatchHook('onDealDamage');
+    this.dispatchHook('onReceiveDamage');
+
+    const heroDmgRes = this.ctx.combatState.mob.takeDamage(this.ctx.roundState.heroDamageInstances, this.ctx);
+    const mobDmgRes = this.ctx.combatState.hero.takeDamage(this.ctx.roundState.mobDamageInstances, this.ctx);
+
+    if (this.ctx.combatState.mob.isDefeated() && !this.handleDeath(this.ctx.combatState.mob)) {
+      this.dispatchHook('onCombatEnd');
+      return { status: 'victory', heroDmgRes, mobDmgRes };
+    }
+    if (this.ctx.combatState.hero.isDefeated() && !this.handleDeath(this.ctx.combatState.hero)) {
+      this.dispatchHook('onCombatEnd');
+      return { status: 'defeat', heroDmgRes, mobDmgRes };
+    }
+
+    this.dispatchHook('onRoundEnd');
+    return { status: 'ongoing', heroDmgRes, mobDmgRes };
+  }
+
+  public rollDice(targetDef: number, customRolls?: number[]): void {
+    const hitCounts: Record<number, number> = {};
+    const missCounts: Record<number, number> = {};
+
+    for (let i = 0; i < this.ctx.roundState.diceCount; i++) {
+      const val = customRolls?.[i] ?? Math.floor(Math.random() * 6) + 1;
+      this.ctx.roundState.rolls.push(val);
+
+      if (val >= targetDef) {
+        this.ctx.roundState.hits++;
+        hitCounts[val] = (hitCounts[val] || 0) + 1;
+      } else {
+        this.ctx.roundState.misses++;
+        this.ctx.roundState.missRolls.push(val);
+        missCounts[val] = (missCounts[val] || 0) + 1;
+      }
+    }
+
+    this.ctx.roundState.matchingHits = Object.values(hitCounts).length > 0
+      ? Math.max(...Object.values(hitCounts))
+      : 0;
+    this.ctx.roundState.matchingMisses = Object.values(missCounts).length > 0
+      ? Math.max(...Object.values(missCounts))
+      : 0;
+  }
+
+  public applyCritHitEffect(option: number): void {
+    if (option === 1) {
+      this.ctx.combatState.mob.hearts = 0;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⭐ CRITICAL HIT [1]: Instant Win! The monster collapses immediately!',
+      });
+    } else if (option === 2 || option === 3) {
+      this.ctx.combatState.guaranteedLootRoll = 6;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⭐ CRITICAL HIT [2-3]: Lucky Spoils! Victory will guarantee a roll of 6 on loot!',
+      });
+    } else if (option === 4 || option === 5) {
+      this.ctx.combatState.pendingDiamondReward = (this.ctx.combatState.pendingDiamondReward || 0) + 1;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⭐ CRITICAL HIT [4-5]: Diamond Bounty! Victory will award +1 Diamond!',
+      });
+    } else if (option === 6) {
+      this.ctx.combatState.pendingDiamondReward = (this.ctx.combatState.pendingDiamondReward || 0) + 2;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⭐ CRITICAL HIT [6]: Massive Hoard! Victory will award +2 Diamonds!',
+      });
+    }
+  }
+
+  public applyCritMissEffect(roll: number): void {
+    if (roll === 1) {
+      if (!this.ctx.combatState.friendlyMobJoined) {
+        this.ctx.combatState.friendlyMobJoined = true;
+        this.ctx.combatState.heroDmgMultiplier = 2;
+        this.ctx.roundState.messages.push({
+          type: 'notice',
+          text: '🐾 CRITICAL MISS [1]: A friendly mob rushes to your aid! Hero damage is doubled!',
+        });
+      } else {
+        this.ctx.roundState.messages.push({
+          type: 'notice',
+          text: '🐾 CRITICAL MISS [1]: A friendly mob is already assisting you!',
+        });
+      }
+    } else if (roll === 2) {
+      this.ctx.combatState.mob.resetHealth();
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: `⚠️ CRITICAL MISS [2]: ${this.ctx.combatState.mob.name} rallied back to maximum health!`,
+      });
+    } else if (roll === 3) {
+      const w = this.ctx.combatState.hero.equipped.weapon;
+      if (w) {
+        this.ctx.combatState.hero.removeEquipment(w);
+        this.ctx.roundState.messages.push({
+          type: 'special',
+          text: `⚠️ CRITICAL MISS [3]: Your weapon (${w}) shattered!`,
+        });
+      }
+    } else if (roll === 4) {
+      const a = this.ctx.combatState.hero.equipped.armor;
+      if (a) {
+        this.ctx.combatState.hero.removeEquipment(a);
+        this.ctx.roundState.messages.push({
+          type: 'special',
+          text: `⚠️ CRITICAL MISS [4]: Your armor (${a}) was destroyed!`,
+        });
+      }
+    } else if (roll === 5) {
+      const w = this.ctx.combatState.hero.equipped.weapon;
+      const a = this.ctx.combatState.hero.equipped.armor;
+      if (w) this.ctx.combatState.hero.removeEquipment(w);
+      if (a) this.ctx.combatState.hero.removeEquipment(a);
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '⚠️ CRITICAL MISS [5]: Catastrophic blunder! Both weapon and armor shattered!',
+      });
+    } else if (roll === 6) {
+      this.ctx.combatState.hero.hearts = 0;
+      this.ctx.roundState.messages.push({
+        type: 'special',
+        text: '🔥 CRITICAL MISS [6]: You slipped into molten lava and died!',
+      });
+    }
+  }
+
+  private applyStandardDamages(): void {
+    let bonusHits = 0;
+    if (this.ctx.roundState.matchingHits === 2) bonusHits = 2;
+    else if (this.ctx.roundState.matchingHits === 3) bonusHits = 3;
+    else if (this.ctx.roundState.matchingHits >= 4) bonusHits = 4;
+
+    const totalHeroHits = this.ctx.roundState.hits + bonusHits;
+    if (totalHeroHits > 0) {
+      const baseDmg = Math.max(0, this.ctx.combatState.hero.damage - (this.ctx.combatState.heroDmgPenalty || 0));
+      const mult = this.ctx.combatState.heroDmgMultiplier || 1;
+      const dmg = baseDmg * mult;
+
+      this.ctx.roundState.heroDamageInstances.push({
+        amount: totalHeroHits * dmg,
+        source: `Hero Attack (${totalHeroHits} hits${mult > 1 ? ' x2 Friendly Mob' : ''})`,
+        appliesArmor: false,
+      });
+    }
+
+    let bonusMisses = 0;
+    if (this.ctx.roundState.matchingMisses === 2) bonusMisses = 2;
+    else if (this.ctx.roundState.matchingMisses === 3) bonusMisses = 3;
+
+    const totalMobHits = this.ctx.roundState.misses + bonusMisses;
+    if (totalMobHits > 0) {
+      const mobDmg = this.ctx.combatState.mob.damage;
+      this.ctx.roundState.mobDamageInstances.push({
+        amount: totalMobHits * mobDmg,
+        source: `${this.ctx.combatState.mob.name} Attack (${totalMobHits} hits)`,
+        appliesArmor: true,
+      });
+    }
+  }
+
+  private handleDeath(entity: Entity): boolean {
+    this.ctx.roundState.dyingEntity = entity;
+    this.dispatchHook('onDeath');
+    return this.ctx.roundState.preventDeath;
+  }
+}
+</file>
+
+<file path="src/models/Entity.ts">
+import { Observable } from './Observable';
+import type { DamageInstance, DamageResult, CombatContext } from '../types/combat';
+
+export interface EntityConfig {
+  name: string;
+  maxHearts: number;
+  hearts?: number;
+}
+
+export abstract class Entity extends Observable {
+  #data: EntityConfig;
+
+  constructor({ name, maxHearts, hearts }: EntityConfig) {
+    super();
+    this.#data = this.createReactiveStore({
+      name,
+      maxHearts,
+      hearts: hearts ?? maxHearts,
+    });
+  }
+
+  abstract readonly armor: number;
+
+  // --- Core Accessors ---
+  public get name(): string { return this.#data.name; }
+  public set name(val: string) { this.#data.name = val; }
+
+  public get maxHearts(): number { return this.#data.maxHearts; }
+  public set maxHearts(val: number) { this.#data.maxHearts = Math.max(1, val); }
+
+  public get hearts(): number { return this.#data.hearts ?? this.maxHearts; }
+  public set hearts(val: number) { this.#data.hearts = Math.max(0, Math.min(this.#data.maxHearts, val)); }
+
+  public get isDead(): boolean { return this.hearts <= 0; }
+
+  public get isAlive(): boolean { return !this.isDead; }
+
+  public isDefeated(): boolean { return this.isDead; }
+
+  // --- Domain Logic ---
+  public changeHealth(delta: number): void { this.hearts += delta; }
+
+  public resetHealth(): void { this.hearts = this.maxHearts; }
+
+  public takeDamage(instances: DamageInstance[], ctx?: CombatContext): DamageResult {
+    let appliedTotal = 0;
+    const details: string[] = [];
+
+    for (const inst of instances) {
+      let amt = inst.amount;
+      if (inst.appliesArmor && this.armor > 0 && !ctx?.combatState?.ignoreArmor) {
+        amt = Math.max(0, amt - this.armor);
+      }
+      this.hearts -= amt;
+      appliedTotal += amt;
+      details.push(`${inst.source}: ${amt} DMG`);
+    }
+
+    return { appliedTotal, details };
+  }
+
+  public toJSON(): EntityConfig {
+    return {
+      name: this.name,
+      hearts: this.hearts,
+      maxHearts: this.maxHearts,
+    };
+  }
+}
+</file>
+
 <file path="src/models/GameSave.ts">
 import type { GameSaveData, GameProgressionState } from '../types/game';
-import type { SerializedCharacter } from "./Character";
+import type { CharacterConfig } from "./Character";
 
 interface GameSaveBase<T extends string, U> {
-  character: SerializedCharacter;
+  character: CharacterConfig;
   type: T;
   data: U;
 }
@@ -3625,7 +4083,7 @@ export type GameSave = SandboxGameSave | NarrativeGameSave | OpenWorldGameSave;
 
 export function initGameSave<T extends GameSave["type"]>(
   type: T,
-  character: SerializedCharacter
+  character: CharacterConfig
 ): Extract<GameSave, { type: T }> {
   return {
     type,
@@ -3680,7 +4138,6 @@ export function migrateSaveData(raw: any): GameSaveData {
         name: 'Steve',
         hearts: 20,
         maxHearts: 20,
-        health: 20,
         restarts: 0,
         equipmentInventoryIds: ['Wooden Pickaxe'],
         equipped: { weapon: null, armor: null, pickaxe: 'Wooden Pickaxe', key: null },
@@ -3712,76 +4169,6 @@ export function migrateSaveData(raw: any): GameSaveData {
         }
       : defaultProgression,
   };
-}
-</file>
-
-<file path="src/types/combat.ts">
-import type { Entity } from '../models/Entity';
-import type { Character } from '../models/Character';
-import type { Mob } from '../models/Mob';
-
-export interface DamageInstance {
-  amount: number;
-  source: string;
-  appliesArmor: boolean;
-}
-
-export interface DamageResult {
-  appliedTotal: number;
-  details: string[];
-}
-
-export interface CombatMessage {
-  type: 'hit' | 'miss' | 'special' | 'notice';
-  text: string;
-}
-
-export interface RoundState {
-  diceCount: number;
-  rolls: number[];
-  hits: number;
-  misses: number;
-  missRolls: number[];
-  matchingHits: number;
-  matchingMisses: number;
-  heroDamageInstances: DamageInstance[];
-  mobDamageInstances: DamageInstance[];
-  messages: CombatMessage[];
-  preventDeath: boolean;
-  dyingEntity: Entity | null;
-  vexBanishedThisRound?: boolean;
-  pendingCritHitPick?: boolean; // True when quadruples occur on hits
-}
-
-export interface CombatState {
-  turn: number;
-  effects: CombatLifecycleHooks[];
-  hero: Character;
-  mob: Mob;
-  ignoreArmor: boolean;
-  heroDmgPenalty: number;
-  heroDmgMultiplier?: number;
-  friendlyMobJoined?: boolean;
-  guaranteedLootRoll?: number;
-  pendingDiamondReward?: number;
-}
-
-export interface CombatContext {
-  combatState: CombatState;
-  roundState: RoundState;
-}
-
-export type CombatHook = (ctx: CombatContext) => void;
-
-export interface CombatLifecycleHooks {
-  onCombatStart?: CombatHook;
-  onRoundStart?: CombatHook;
-  onRollEvaluated?: CombatHook;
-  onDealDamage?: CombatHook;
-  onReceiveDamage?: CombatHook;
-  onRoundEnd?: CombatHook;
-  onDeath?: CombatHook;
-  onCombatEnd?: CombatHook;
 }
 </file>
 
@@ -3996,378 +4383,7 @@ export * from './ui/DiceRoller';
 export * from './editor/ExpressionEditor';
 export * from './editor/ActionNodeEditor';
 export * from './editor/MobEditor';
-</file>
-
-<file path="src/data/icons.ts">
-export const ICONS: Record<string, string> = {
-  hero: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="7" height="7" fill="#000"/><rect x="1" y="1" width="5" height="2" fill="#4a3219"/><rect x="1" y="3" width="5" height="3" fill="#d39c7e"/><rect x="1" y="3" width="2" height="1" fill="#fff"/><rect x="2" y="3" width="1" height="1" fill="#283593"/><rect x="4" y="3" width="2" height="1" fill="#fff"/><rect x="4" y="3" width="1" height="1" fill="#283593"/></svg>`,
-  heartFull: `<svg class="pixel-icon" viewBox="0 0 8 8"><path d="M 1,0 H 3 V 1 H 4 V 1 0 H 6 V 1 H 7 V 4 H 6 V 5 H 5 V 6 H 4 V 7 H 3 V 6 H 2 V 5 H 1 V 4 H 0 V 1 h 1 z"/><path d="M 1,1 V 4 H 2 V 5 H 3 V 6 H 4 V 5 H 5 V 4 H 6 V 1 H 4 V 2 H 3 V 1 Z" style="fill:#e41b1b"/></svg>`,
-  heartEmpty: `<svg class="pixel-icon" viewBox="0 0 8 8"><path d="M 1,0 V 1 H 3 V 0 Z M 3,1 V 2 H 4 V 1 Z M 4,1 H 6 V 0 H 4 Z M 6,1 V 4 H 7 V 1 Z M 6,4 H 5 V 5 H 6 Z M 5,5 H 4 V 6 H 5 Z M 4,6 H 3 V 7 H 4 Z M 3,6 V 5 H 2 V 6 Z M 2,5 V 4 H 1 V 5 Z M 1,4 V 1 H 0 v 3 z"/></svg>`,
-  sword: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000000" d="M 0,3 H 3 V 2 H 4 V 1 H 5 V 0 H 8 V 3 H 7 V 4 H 6 V 5 H 5 V 8 H 3 V 7 H 2 V 8 H 0 V 6 H 1 V 5 H 0 Z" /><rect style="fill:#6e4e2e" width="1" height="1" x="1" y="6" /><path style="fill:#d6d8d9" d="M 5,1 V 3 H 7 V 1 Z M 5,3 H 4 V 4 H 5 Z M 2,5 V 6 H 3 V 5 Z" /><path style="fill:#a9afb2" d="M 4 2 L 4 3 L 5 3 L 5 2 L 4 2 z M 5 3 L 5 4 L 6 4 L 6 3 L 5 3 z M 1 4 L 1 5 L 2 5 L 2 4 L 1 4 z M 3 4 L 3 5 L 4 5 L 4 4 L 3 4 z M 3 6 L 3 7 L 4 7 L 4 6 L 3 6 z " /><path style="fill:#4a4d4f" d="M 2 4 L 2 5 L 3 5 L 3 4 L 2 4 z M 3 5 L 3 6 L 4 6 L 4 5 L 3 5 z " /><path style="fill:#858a8b" d="M 3 3 L 3 4 L 4 4 L 4 3 L 3 3 z M 4 4 L 4 5 L 5 5 L 5 4 L 4 4 z " /></svg>`,
-  tnt: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="7" height="7" fill="#000"/><rect x="1" y="1" width="5" height="5" fill="#d32f2f"/><rect x="1" y="2" width="5" height="3" fill="#f5f5f5"/><rect x="3" y="0" width="1" height="1" fill="#aaa"/></svg>`,
-  chestplate: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000000" d="M 0,0 V 4 H 1 V 7 H 2 V 8 H 5.9999999 V 7 h 1 V 4 h 1 V 0 h -3 V 1 H 3 V 0 Z" /><rect style="fill:#858a8b" width="4" height="1" x="2" y="6" /><path style="fill:#d6d8d9" d="M 1,1 V 3 H 2 V 5 H 6 V 3 H 7 V 1 H 5 V 2 H 3 V 1 Z" /><path style="fill:#a9afb2" d="M 2,5 V 6 H 3 V 7 H 5 V 6 H 6 V 5 Z M 2,3 H 3 V 4 H 2 Z M 5,3 H 6 V 4 H 5 Z M 5,1 H 6 V 2 H 5 Z M 2,1 H 3 V 2 H 2 Z" /><rect style="fill:#f9fdfe" width="2" height="1" x="3" y="4" /></svg>`,
-  pickaxe: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000000" d="M 1,1 V 3 H 3 V 4 H 2 V 5 H 1 V 6 H 0 V 8 H 2 V 7 H 3 V 6 H 4 V 5 H 5 V 7 H 7 V 6 H 8 V 2 H 7 V 1 H 6 V 0 H 2 v 1 z" /><path style="fill:#4a4c50" d="M 4,2 H 6 V 4 H 4 Z" /><path style="fill:#8b6328" d="M 4,3 H 5 V 4 H 4 Z M 1,6 H 2 V 7 H 1 Z M 2,5 H 3 V 6 H 2 Z M 3,4 H 4 V 5 H 3 Z" /><path style="fill:#a8afb1" d="M 2 1 L 2 2 L 5 2 L 5 3 L 6 3 L 6 6 L 7 6 L 7 2 L 6 2 L 6 1 L 2 1 z " /><path style="fill:#d5d9d9" d="M 6,3 H 7 V 5 H 6 Z M 5,2 H 6 V 3 H 5 Z M 3,1 H 5 V 2 H 3 Z" /></svg>`,
-  bed: `<svg class="pixel-icon" viewBox="0 0 8 8"><path style="fill:#000" d="M 0,1 V 6 H 3 V 5 H 4 V 6 H 7 V 1 Z"/><rect x="1" y="2" width="1" height="1" fill="#fff"/><rect x="2" y="2" width="4" height="1" fill="#d32f2f"/><rect x="1" y="3" width="5" height="1" fill="#5d4037"/><rect x="1" y="4" width="1" height="1" fill="#3e2723"/><rect x="5" y="4" width="1" height="1" fill="#3e2723"/></svg>`,
-  target: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="3" y="3" width="1" height="1" fill="#d32f2f"/><path d="M 2,0 V 1 H 3 V 2 H 4 V 1 H 5 V 0 Z M 5,1 V 2 H 6 V 1 Z M 6,2 V 3 H 5 V 4 H 6 V 5 H 7 V 2 Z M 6,5 H 5 V 6 H 6 Z M 5,6 H 4 V 5 H 3 V 6 H 2 V 7 H 5 Z M 2,6 V 5 H 1 V 6 Z M 1,5 V 4 H 2 V 3 H 1 V 2 H 0 V 5 Z M 1,2 H 2 V 1 H 1 Z"/></svg>`,
-  book: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="7" height="7" fill="#000"/><rect x="1" y="1" width="5" height="5" fill="#fff8e1"/><rect x="1" y="1" width="1" height="5" fill="#5d4037"/><rect x="5" y="3" width="1" height="1" fill="#fbc02d"/></svg>`,
-  spark: `<svg class="pixel-icon" viewBox="0 0 8 8"><path d="M 4,0 H 2 V 3 H 0 V 4 H 3 V 8 H 4 V 5 H 6 V 4 H 4 Z" fill="#f7d51d"/></svg>`,
-  tree: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="2" y="0" width="4" height="4" fill="#2e7d32"/><rect x="1" y="1" width="6" height="3" fill="#388e3c"/><rect x="3" y="4" width="2" height="4" fill="#5d4037"/></svg>`,
-  crafting: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="0" y="0" width="8" height="8" fill="#5d4037"/><rect x="1" y="1" width="6" height="6" fill="#8d6e63"/><rect x="1" y="1" width="3" height="3" fill="#d7ccc8"/><rect x="4" y="4" width="3" height="3" fill="#d7ccc8"/></svg>`,
-  gear: `<svg class="pixel-icon" viewBox="0 0 8 8"><rect x="3" y="0" width="2" height="8" fill="#000"/><rect x="0" y="3" width="8" height="2" fill="#000"/><rect x="1" y="1" width="6" height="6" fill="#000"/><rect x="2" y="2" width="4" height="4" fill="#aaa"/><rect x="3" y="3" width="2" height="2" fill="#212529"/></svg>`
-};
-
-export type IconName = keyof typeof ICONS;
-</file>
-
-<file path="src/engine/CombatEngine.ts">
-import type { Character } from '../models/Character';
-import type { Mob } from '../models/Mob';
-import type { Entity } from '../models/Entity';
-import type { CombatContext, CombatLifecycleHooks, DamageResult } from '../types/combat';
-
-export interface RoundResult {
-  status: 'ongoing' | 'victory' | 'defeat';
-  heroDmgRes?: DamageResult;
-  mobDmgRes?: DamageResult;
-}
-
-export class CombatEngine {
-  public ctx: CombatContext;
-
-  constructor(hero: Character, mob: Mob) {
-    this.ctx = {
-      combatState: {
-        turn: 0,
-        effects: [],
-        hero,
-        mob,
-        ignoreArmor: false,
-        heroDmgPenalty: 0,
-      },
-      roundState: {
-        diceCount: 1,
-        rolls: [],
-        hits: 0,
-        misses: 0,
-        missRolls: [],
-        matchingHits: 0,
-        matchingMisses: 0,
-        heroDamageInstances: [],
-        mobDamageInstances: [],
-        messages: [],
-        preventDeath: false,
-        dyingEntity: null,
-      },
-    };
-  }
-
-  public dispatchHook(hookName: keyof CombatLifecycleHooks): void {
-    const listeners: (CombatLifecycleHooks | undefined)[] = [
-      this.ctx.combatState.hero,
-      this.ctx.combatState.mob,
-      ...this.ctx.combatState.effects,
-    ];
-
-    for (const listener of listeners) {
-      listener?.[hookName]?.(this.ctx);
-    }
-  }
-
-  public initCombat(): void {
-    this.dispatchHook('onCombatStart');
-  }
-
-  public executeRound(diceCount: number, targetDef: number, customRolls?: number[]): RoundResult {
-    this.ctx.combatState.turn++;
-    this.ctx.roundState = {
-      diceCount: Math.min(this.ctx.combatState.hero.attack, Math.max(1, diceCount)),
-      rolls: [],
-      hits: 0,
-      misses: 0,
-      missRolls: [],
-      matchingHits: 0,
-      matchingMisses: 0,
-      heroDamageInstances: [],
-      mobDamageInstances: [],
-      messages: [],
-      preventDeath: false,
-      dyingEntity: null,
-    };
-
-    this.dispatchHook('onRoundStart');
-    if (this.ctx.combatState.hero.hearts <= 0 && !this.handleDeath(this.ctx.combatState.hero)) {
-      return { status: 'defeat' };
-    }
-
-    // Pass custom rolls to dice evaluation
-    this.rollDice(targetDef, customRolls);
-    this.dispatchHook('onRollEvaluated');
-
-    if (this.ctx.roundState.matchingMisses >= 4) {
-      this.ctx.combatState.hero.setHealth(0);
-      this.ctx.roundState.messages.push({
-        type: 'special',
-        text: '💀 CRITICAL MISS (QUADRUPLE): Complete failure! Instant Loss!',
-      });
-      this.dispatchHook('onCombatEnd');
-      return { status: 'defeat' };
-    }
-
-    if (this.ctx.roundState.matchingHits === 3) {
-      const roll = Math.floor(Math.random() * 6) + 1;
-      this.applyCritHitEffect(roll);
-    } else if (this.ctx.roundState.matchingHits >= 4) {
-      this.ctx.roundState.pendingCritHitPick = true;
-    }
-
-    if (this.ctx.roundState.matchingMisses === 3) {
-      const roll = Math.floor(Math.random() * 6) + 1;
-      this.applyCritMissEffect(roll);
-    }
-
-    this.applyStandardDamages();
-    this.dispatchHook('onDealDamage');
-    this.dispatchHook('onReceiveDamage');
-
-    const heroDmgRes = this.ctx.combatState.mob.takeDamage(this.ctx.roundState.heroDamageInstances, this.ctx);
-    const mobDmgRes = this.ctx.combatState.hero.takeDamage(this.ctx.roundState.mobDamageInstances, this.ctx);
-
-    if (this.ctx.combatState.mob.isDefeated() && !this.handleDeath(this.ctx.combatState.mob)) {
-      this.dispatchHook('onCombatEnd');
-      return { status: 'victory', heroDmgRes, mobDmgRes };
-    }
-    if (this.ctx.combatState.hero.isDefeated() && !this.handleDeath(this.ctx.combatState.hero)) {
-      this.dispatchHook('onCombatEnd');
-      return { status: 'defeat', heroDmgRes, mobDmgRes };
-    }
-
-    this.dispatchHook('onRoundEnd');
-    return { status: 'ongoing', heroDmgRes, mobDmgRes };
-  }
-
-  public rollDice(targetDef: number, customRolls?: number[]): void {
-    const hitCounts: Record<number, number> = {};
-    const missCounts: Record<number, number> = {};
-
-    for (let i = 0; i < this.ctx.roundState.diceCount; i++) {
-      const val = customRolls?.[i] ?? Math.floor(Math.random() * 6) + 1;
-      this.ctx.roundState.rolls.push(val);
-
-      if (val >= targetDef) {
-        this.ctx.roundState.hits++;
-        hitCounts[val] = (hitCounts[val] || 0) + 1;
-      } else {
-        this.ctx.roundState.misses++;
-        this.ctx.roundState.missRolls.push(val);
-        missCounts[val] = (missCounts[val] || 0) + 1;
-      }
-    }
-
-    this.ctx.roundState.matchingHits = Object.values(hitCounts).length > 0
-      ? Math.max(...Object.values(hitCounts))
-      : 0;
-    this.ctx.roundState.matchingMisses = Object.values(missCounts).length > 0
-      ? Math.max(...Object.values(missCounts))
-      : 0;
-  }
-
-  public applyCritHitEffect(option: number): void {
-    if (option === 1) {
-      this.ctx.combatState.mob.setHealth(0);
-      this.ctx.roundState.messages.push({
-        type: 'special',
-        text: '⭐ CRITICAL HIT [1]: Instant Win! The monster collapses immediately!',
-      });
-    } else if (option === 2 || option === 3) {
-      this.ctx.combatState.guaranteedLootRoll = 6;
-      this.ctx.roundState.messages.push({
-        type: 'special',
-        text: '⭐ CRITICAL HIT [2-3]: Lucky Spoils! Victory will guarantee a roll of 6 on loot!',
-      });
-    } else if (option === 4 || option === 5) {
-      this.ctx.combatState.pendingDiamondReward = (this.ctx.combatState.pendingDiamondReward || 0) + 1;
-      this.ctx.roundState.messages.push({
-        type: 'special',
-        text: '⭐ CRITICAL HIT [4-5]: Diamond Bounty! Victory will award +1 Diamond!',
-      });
-    } else if (option === 6) {
-      this.ctx.combatState.pendingDiamondReward = (this.ctx.combatState.pendingDiamondReward || 0) + 2;
-      this.ctx.roundState.messages.push({
-        type: 'special',
-        text: '⭐ CRITICAL HIT [6]: Massive Hoard! Victory will award +2 Diamonds!',
-      });
-    }
-  }
-
-  public applyCritMissEffect(roll: number): void {
-    if (roll === 1) {
-      if (!this.ctx.combatState.friendlyMobJoined) {
-        this.ctx.combatState.friendlyMobJoined = true;
-        this.ctx.combatState.heroDmgMultiplier = 2;
-        this.ctx.roundState.messages.push({
-          type: 'notice',
-          text: '🐾 CRITICAL MISS [1]: A friendly mob rushes to your aid! Hero damage is doubled!',
-        });
-      } else {
-        this.ctx.roundState.messages.push({
-          type: 'notice',
-          text: '🐾 CRITICAL MISS [1]: A friendly mob is already assisting you!',
-        });
-      }
-    } else if (roll === 2) {
-      this.ctx.combatState.mob.resetHealth();
-      this.ctx.roundState.messages.push({
-        type: 'special',
-        text: `⚠️ CRITICAL MISS [2]: ${this.ctx.combatState.mob.name} rallied back to maximum health!`,
-      });
-    } else if (roll === 3) {
-      const w = this.ctx.combatState.hero.equipped.weapon;
-      if (w) {
-        this.ctx.combatState.hero.removeEquipment(w);
-        this.ctx.roundState.messages.push({
-          type: 'special',
-          text: `⚠️ CRITICAL MISS [3]: Your weapon (${w}) shattered!`,
-        });
-      }
-    } else if (roll === 4) {
-      const a = this.ctx.combatState.hero.equipped.armor;
-      if (a) {
-        this.ctx.combatState.hero.removeEquipment(a);
-        this.ctx.roundState.messages.push({
-          type: 'special',
-          text: `⚠️ CRITICAL MISS [4]: Your armor (${a}) was destroyed!`,
-        });
-      }
-    } else if (roll === 5) {
-      const w = this.ctx.combatState.hero.equipped.weapon;
-      const a = this.ctx.combatState.hero.equipped.armor;
-      if (w) this.ctx.combatState.hero.removeEquipment(w);
-      if (a) this.ctx.combatState.hero.removeEquipment(a);
-      this.ctx.roundState.messages.push({
-        type: 'special',
-        text: '⚠️ CRITICAL MISS [5]: Catastrophic blunder! Both weapon and armor shattered!',
-      });
-    } else if (roll === 6) {
-      this.ctx.combatState.hero.setHealth(0);
-      this.ctx.roundState.messages.push({
-        type: 'special',
-        text: '🔥 CRITICAL MISS [6]: You slipped into molten lava and died!',
-      });
-    }
-  }
-
-  private applyStandardDamages(): void {
-    let bonusHits = 0;
-    if (this.ctx.roundState.matchingHits === 2) bonusHits = 2;
-    else if (this.ctx.roundState.matchingHits === 3) bonusHits = 3;
-    else if (this.ctx.roundState.matchingHits >= 4) bonusHits = 4;
-
-    const totalHeroHits = this.ctx.roundState.hits + bonusHits;
-    if (totalHeroHits > 0) {
-      const baseDmg = Math.max(0, this.ctx.combatState.hero.damage - (this.ctx.combatState.heroDmgPenalty || 0));
-      const mult = this.ctx.combatState.heroDmgMultiplier || 1;
-      const dmg = baseDmg * mult;
-
-      this.ctx.roundState.heroDamageInstances.push({
-        amount: totalHeroHits * dmg,
-        source: `Hero Attack (${totalHeroHits} hits${mult > 1 ? ' x2 Friendly Mob' : ''})`,
-        appliesArmor: false,
-      });
-    }
-
-    let bonusMisses = 0;
-    if (this.ctx.roundState.matchingMisses === 2) bonusMisses = 2;
-    else if (this.ctx.roundState.matchingMisses === 3) bonusMisses = 3;
-
-    const totalMobHits = this.ctx.roundState.misses + bonusMisses;
-    if (totalMobHits > 0) {
-      const mobDmg = this.ctx.combatState.mob.damage;
-      this.ctx.roundState.mobDamageInstances.push({
-        amount: totalMobHits * mobDmg,
-        source: `${this.ctx.combatState.mob.name} Attack (${totalMobHits} hits)`,
-        appliesArmor: true,
-      });
-    }
-  }
-
-  private handleDeath(entity: Entity): boolean {
-    this.ctx.roundState.dyingEntity = entity;
-    this.dispatchHook('onDeath');
-    return this.ctx.roundState.preventDeath;
-  }
-}
-</file>
-
-<file path="src/models/Entity.ts">
-import { Observable } from './Observable';
-import type { DamageInstance, DamageResult, CombatContext } from '../types/combat';
-
-export interface EntityConfig {
-  name: string;
-  maxHearts: number;
-  hearts?: number;
-}
-
-export abstract class Entity extends Observable {
-  #data: EntityConfig;
-
-  constructor({ name, maxHearts, hearts }: EntityConfig) {
-    super();
-    this.#data = this.createReactiveStore({
-      name,
-      maxHearts,
-      hearts: hearts ?? maxHearts,
-    });
-  }
-
-  abstract readonly armor: number;
-
-  // --- Core Accessors ---
-  public get name(): string { return this.#data.name; }
-  public set name(val: string) { this.#data.name = val; }
-
-  public get maxHearts(): number { return this.#data.maxHearts; }
-  public set maxHearts(val: number) { this.#data.maxHearts = Math.max(1, val); }
-
-  public get hearts(): number { return this.#data.hearts ?? this.maxHearts; }
-  public set hearts(val: number) { this.#data.hearts = Math.max(0, Math.min(this.#data.maxHearts, val)); }
-
-  public get isDead(): boolean { return this.hearts <= 0; }
-
-  public get isAlive(): boolean { return !this.isDead; }
-
-  public isDefeated(): boolean { return this.isDead; }
-
-  // --- Domain Logic ---
-  public changeHealth(delta: number): void { this.hearts += delta; }
-
-  public resetHealth(): void { this.hearts = this.maxHearts; }
-
-  public takeDamage(instances: DamageInstance[], ctx?: CombatContext): DamageResult {
-    let appliedTotal = 0;
-    const details: string[] = [];
-
-    for (const inst of instances) {
-      let amt = inst.amount;
-      if (inst.appliesArmor && this.armor > 0 && !ctx?.combatState?.ignoreArmor) {
-        amt = Math.max(0, amt - this.armor);
-      }
-      this.hearts -= amt;
-      appliedTotal += amt;
-      details.push(`${inst.source}: ${amt} DMG`);
-    }
-
-    return { appliedTotal, details };
-  }
-
-  public toJSON(): EntityConfig {
-    return {
-      name: this.name,
-      hearts: this.hearts,
-      maxHearts: this.maxHearts,
-    };
-  }
-}
+export * from './editor/MobManagerModal';
 </file>
 
 <file path="src/types/controller.ts">
@@ -4377,6 +4393,7 @@ import type { Passage } from './narrative';
 import type { TrackedMaterial } from './inventory';
 import type { Region } from './world';
 import { GameStore } from '../models/GameStore';
+import { MobConfig } from '../models/Mob';
 
 export interface ReturnBannerDescriptor {
   label: string;
@@ -4394,6 +4411,7 @@ export interface EngineContext {
   game: GameStore;
   passages: Record<string, Passage>;
   regions: Record<string, Region>;
+  mobs: Record<string, MobConfig>; // <-- Add this
   saveState: () => void;
   setActiveView: (view: ActiveView) => void;
   setPendingMaterial: (mat: TrackedMaterial | null) => void;
@@ -4427,7 +4445,6 @@ import { Entity, EntityConfig } from './Entity';
 import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
 import { Action, CombatBehaviorAst } from '../types/ast';
 import { AstInterpreter } from '../engine/astInterpreter';
-import { Character } from './Character';
 
 interface MobData {
   id: string;
@@ -4462,7 +4479,7 @@ export class Mob extends Entity implements Required<CombatLifecycleHooks> {
       state
     });
 
-    this.#hooks = this.#compileHooks(behavior);
+    this.#hooks = this.#compileHooks(behavior || {});
   }
 
   #createHookHandler(ast: Action[]) {
@@ -4563,14 +4580,6 @@ import type { Item } from './Item';
 import type { TrackedMaterial, EquippedSlots, InventoryRule } from '../types/inventory';
 import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
 
-export interface SerializedCharacter extends EntityConfig {
-  restarts: number;
-  equipmentInventoryIds: string[];
-  equipped: EquippedSlots;
-  materials: Record<TrackedMaterial, number>;
-  materialRule: InventoryRule;
-}
-
 interface CharacterData {
   restarts: number;
   materialRule: InventoryRule;
@@ -4578,6 +4587,8 @@ interface CharacterData {
   equipped: EquippedSlots;
   materials: Record<TrackedMaterial, number>;
 }
+
+export type CharacterConfig = EntityConfig & CharacterData;
 
 const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
   Wood: 0,
@@ -4596,28 +4607,25 @@ const DEFAULT_MATERIALS: Record<TrackedMaterial, number> = {
 export class Character extends Entity implements CombatLifecycleHooks {
   #data: CharacterData;
 
-  constructor(initialData?: Partial<SerializedCharacter>) {
-    super(
-      initialData?.name || 'Steve',
-      initialData?.maxHearts ?? 20,
-      initialData?.hearts ?? initialData?.health ?? 20
-    );
+  constructor({restarts, materialRule, equipmentInventoryIds, equipped, materials, ...entityConfig}: Partial<CharacterConfig> = {}) {
+    const json = Object.assign({name: 'Steve', maxHearts: 20}, entityConfig);
+    super(json);
 
     this.#data = this.createReactiveStore({
-      restarts: Math.max(0, initialData?.restarts ?? 0),
-      materialRule: initialData?.materialRule || 'total',
-      equipmentInventoryIds: initialData?.equipmentInventoryIds
-        ? [...initialData.equipmentInventoryIds]
+      restarts: Math.max(0, restarts ?? 0),
+      materialRule: materialRule || 'total',
+      equipmentInventoryIds: equipmentInventoryIds
+        ? [...equipmentInventoryIds]
         : ['Wooden Pickaxe'],
       equipped: {
-        weapon: initialData?.equipped?.weapon ?? null,
-        armor: initialData?.equipped?.armor ?? null,
-        pickaxe: initialData?.equipped?.pickaxe ?? 'Wooden Pickaxe',
-        key: initialData?.equipped?.key ?? null,
+        weapon: equipped?.weapon ?? null,
+        armor: equipped?.armor ?? null,
+        pickaxe: equipped?.pickaxe ?? 'Wooden Pickaxe',
+        key: equipped?.key ?? null,
       },
       materials: {
         ...DEFAULT_MATERIALS,
-        ...(initialData?.materials || {}),
+        ...(materials || {}),
       },
     });
   }
@@ -4783,10 +4791,9 @@ export class Character extends Entity implements CombatLifecycleHooks {
   }
 
   // --- Serialization ---
-  public override toJSON(): SerializedCharacter {
+  public override toJSON(): CharacterConfig {
     return {
       ...super.toJSON(),
-      health: this.hearts,
       restarts: this.restarts,
       equipmentInventoryIds: [...this.#data.equipmentInventoryIds],
       equipped: { ...this.#data.equipped },

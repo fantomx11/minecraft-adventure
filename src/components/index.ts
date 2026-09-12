@@ -35,3 +35,4 @@ export * from './ui/DiceRoller';
 export * from './editor/ExpressionEditor';
 export * from './editor/ActionNodeEditor';
 export * from './editor/MobEditor';
+export * from './editor/MobManagerModal';

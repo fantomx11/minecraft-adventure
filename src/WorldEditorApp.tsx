@@ -1,3 +1,5 @@
+import type { Expr, Action } from './types/ast';
+import { BESTIARY } from './data/bestiary';
 import { useState } from 'preact/hooks';
 import {
   CUSTOM_WORLD_STORAGE_KEY,
@@ -10,10 +12,10 @@ import { Region, PointOfInterest, POIQuestHook, POINodeExit } from './types/worl
 import { Passage, PassageChoice } from './types/narrative';
 import { PixelFrame } from './components/ui/PixelFrame';
 import { Icon } from './components/ui/Icon';
-import { ConditionEditor } from './components/editor/ConditionEditor';
-import { MutationListEditor } from './components/editor/MutationListEditor';
 import { PassageSidebar } from './components/editor/PassageSidebar';
 import { PassageForm } from './components/editor/PassageForm';
+import { ActionListEditor } from './components/editor/ActionNodeEditor';
+import { ExpressionEditor } from './components/editor/ExpressionEditor';
 
 export function WorldEditorApp() {
   const [pkg, setPkg] = useState(() => getInitialWorldPackage());
@@ -50,10 +52,6 @@ export function WorldEditorApp() {
   const currentNode = currentPoi?.nodes[selectedNodeId || ''];
 
   const allPassageIds = Object.keys(pkg.passages);
-  const allLocationIds = [
-    ...Object.keys(pkg.regions),
-    ...Object.values(pkg.regions).flatMap((r) => r.pointsOfInterest.map((p) => p.id)),
-  ];
 
   const handleSaveToStorage = () => {
     localStorage.setItem(CUSTOM_WORLD_STORAGE_KEY, JSON.stringify(pkg, null, 2));
@@ -280,6 +278,7 @@ export function WorldEditorApp() {
                 setPkg({
                   regions: JSON.parse(JSON.stringify(REGIONS)),
                   passages: JSON.parse(JSON.stringify(STORY_PASSAGES)),
+                  mobs: Object.fromEntries(BESTIARY.map((m) => [m.id, JSON.parse(JSON.stringify(m))])),
                 });
                 localStorage.removeItem(CUSTOM_WORLD_STORAGE_KEY);
                 const firstRegKey = Object.keys(REGIONS)[0];
@@ -705,21 +704,16 @@ export function WorldEditorApp() {
                                         </div>
                                       </div>
 
-                                      <ConditionEditor
-                                        label="EXIT ACCESS CONDITION"
-                                        condition={ex.condition}
-                                        allPassageIds={allPassageIds}
-                                        allLocationIds={allLocationIds}
-                                        onChange={(condition) => {
+                                      <ExpressionEditor
+                                        expr={ex.condition ?? { type: 'literal', value: true }}
+                                        onChange={(condition: Expr) => {
                                           ex.condition = condition;
                                           setPkg({ ...pkg });
                                         }}
                                       />
-
-                                      <MutationListEditor
-                                        title="EXIT MUTATIONS"
-                                        mutations={ex.mutations}
-                                        onChange={(mutations) => {
+                                      <ActionListEditor
+                                        actions={ex.mutations ?? []}
+                                        onChange={(mutations: Action[]) => {
                                           ex.mutations = mutations;
                                           setPkg({ ...pkg });
                                         }}
@@ -797,21 +791,16 @@ export function WorldEditorApp() {
                                         />
                                       </div>
 
-                                      <ConditionEditor
-                                        label="HOOK AVAILABILITY CONDITION"
-                                        condition={qh.condition}
-                                        allPassageIds={allPassageIds}
-                                        allLocationIds={allLocationIds}
-                                        onChange={(condition) => {
+                                      <ExpressionEditor
+                                        expr={qh.condition ?? { type: 'literal', value: true }}
+                                        onChange={(condition: Expr) => {
                                           qh.condition = condition;
                                           setPkg({ ...pkg });
                                         }}
                                       />
-
-                                      <MutationListEditor
-                                        title="HOOK CONSEQUENCES / MUTATIONS"
-                                        mutations={qh.mutations}
-                                        onChange={(mutations) => {
+                                      <ActionListEditor
+                                        actions={qh.mutations ?? []}
+                                        onChange={(mutations: Action[]) => {
                                           qh.mutations = mutations;
                                           setPkg({ ...pkg });
                                         }}

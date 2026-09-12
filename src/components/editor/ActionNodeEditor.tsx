@@ -1,5 +1,3 @@
-// src/components/editor/ActionNodeEditor.tsx
-import { h, Fragment } from 'preact';
 import type { Action } from '../../types/ast';
 import { ExpressionEditor } from './ExpressionEditor';
 
@@ -40,6 +38,7 @@ export function ActionNodeEditor({ action, onChange, onDelete }: ActionNodeEdito
 
   return (
     <div
+      class="ast-font"
       style={{
         background: theme.bg,
         borderLeft: `4px solid ${theme.border}`,
@@ -49,7 +48,7 @@ export function ActionNodeEditor({ action, onChange, onDelete }: ActionNodeEdito
         boxShadow: '2px 2px 0px #000',
         padding: '6px 8px',
         marginBottom: '6px',
-        fontFamily: 'monospace',
+        fontFamily: "'TIC-80 Narrow', monospace",
         fontSize: '11px',
       }}
     >
@@ -263,7 +262,7 @@ export function ActionNodeEditor({ action, onChange, onDelete }: ActionNodeEdito
   );
 }
 
-export function ActionListEditor({ actions, onChange, allowedTypes }: ActionListEditorProps) {
+export function ActionListEditor({ actions, onChange }: ActionListEditorProps) {
   const addAction = (type: Action['type']) => {
     let newAction: Action;
     switch (type) {
@@ -331,10 +330,15 @@ export function ActionListEditor({ actions, onChange, allowedTypes }: ActionList
       {actions.map((act, i) => (
         <ActionNodeEditor key={i} action={act} onChange={(node) => updateNode(i, node)} onDelete={() => deleteNode(i)} />
       ))}
-      <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+      <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }} class="ast-font">
         <select
           id="action-add-select"
-          style={{ background: '#18181b', color: '#fff', border: '1px solid #444', fontSize: '10px' }}
+          style={{
+            background: '#18181b',
+            color: '#fff',
+            border: '1px solid #444',
+            fontSize: '12px',
+          }}
           onChange={(e) => {
             const select = e.target as HTMLSelectElement;
             if (select.value) {

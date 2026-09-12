@@ -93,7 +93,7 @@ export function CharacterSheetDrawer({ hero, isOpen, allowInventoryEditing = fal
           current={hero.hearts}
           max={hero.maxHearts}
           onChange={(val) => {
-            hero.setHealth(val);
+            hero.hearts = val;
             onUpdate();
           }}
         />

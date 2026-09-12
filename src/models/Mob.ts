@@ -2,7 +2,6 @@ import { Entity, EntityConfig } from './Entity';
 import type { CombatContext, CombatLifecycleHooks } from '../types/combat';
 import { Action, CombatBehaviorAst } from '../types/ast';
 import { AstInterpreter } from '../engine/astInterpreter';
-import { Character } from './Character';
 
 interface MobData {
   id: string;
