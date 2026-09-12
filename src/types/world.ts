@@ -2,92 +2,7 @@ import type { TrackedMaterial } from './inventory';
 import type { MobTableEntry } from './narrative';
 import type { Character } from '../models/Character';
 import type { OpenWorldProgression } from './game';
-
-export type FlagComparator = "==" | "!=" | ">" | ">=" | "<=" | "<";
-
-// --- Condition AST ---
-export interface FlagCondition {
-  type: 'flag';
-  flag: string;
-  comparator: FlagComparator;
-  value: number | boolean | string;
-}
-
-export interface InventoryCondition {
-  type: 'inventory';
-  itemId: string;
-  comparator?: FlagComparator; // Defaults to '>='
-  count?: number;              // Defaults to 1
-}
-
-export interface PlayerCondition {
-  type: 'player';
-  stat: 'restarts' | 'attack' | 'damage' | 'armor';
-  comparator: FlagComparator;
-  value: number;
-}
-
-export interface ProgressionCondition {
-  type: 'progression';
-  counter: 'forestCleared' | 'mineCleared' | 'travelSteps' | 'trekBonus';
-  comparator: FlagComparator;
-  value: number;
-}
-
-export interface PassageCondition {
-  type: 'passage';
-  passageId: string;
-  visited?: boolean;           // Defaults to true
-}
-
-export interface LocationCondition {
-  type: 'location';
-  locationId: string;          // Region ID or POI ID
-  discovered?: boolean;        // Defaults to true
-}
-
-export interface LogicalCondition {
-  type: 'and' | 'or';
-  conditions: Condition[];
-}
-
-export interface NegationCondition {
-  type: 'not';
-  condition: Condition;
-}
-
-export type Condition =
-  | FlagCondition
-  | InventoryCondition
-  | PlayerCondition
-  | ProgressionCondition
-  | PassageCondition
-  | LocationCondition
-  | LogicalCondition
-  | NegationCondition;
-
-// --- Mutation Types ---
-export interface FlagMutation {
-  type: 'flag';
-  flag: string;
-  action: 'set' | 'add' | 'toggle' | 'delete';
-  value?: number | boolean | string;
-}
-
-export interface InventoryMutation {
-  type: 'inventory';
-  itemId: string;
-  action: 'add' | 'remove';
-  count?: number; // Defaults to 1
-}
-
-export interface LocationMutation {
-  type: 'location';
-  locationId: string;
-  action: 'discover';
-}
-
-export type Mutation = FlagMutation | InventoryMutation | LocationMutation;
+import { Action, Expr } from './ast';
 
 // --- Travel Contracts ---
 export interface TravelRequest {
@@ -130,15 +45,15 @@ export interface POINodeExit {
   targetNodeId?: string;
   exitToRegion?: boolean;
   label: string;
-  condition?: Condition;
-  mutations?: Mutation[];
+  condition?: Expr;
+  mutations?: Action[];
   lockedReason?: string;
   behavior?: 'hide' | 'disable';
 }
 
 export interface ActionCondition {
-  condition?: Condition;
-  mutations?: Mutation[];
+  condition?: Expr;
+  mutations?: Action[];
   hiddenUntilMet?: boolean;
 }
 
@@ -156,8 +71,8 @@ export interface POIQuestHook {
   questId: string;
   label: string;
   passageId: string;
-  condition?: Condition;
-  mutations?: Mutation[];
+  condition?: Expr;
+  mutations?: Action[];
   lockedReason?: string;
   behavior?: 'hide' | 'disable';
 }

@@ -1,7 +1,8 @@
 import { BESTIARY } from '../../data/bestiary';
+import { Expr, Action } from '../../types/ast';
 import { PassageChoice } from '../../types/narrative';
-import { ConditionEditor } from './ConditionEditor';
-import { MutationListEditor } from './MutationListEditor';
+import { ActionListEditor } from './ActionNodeEditor';
+import { ExpressionEditor } from './ExpressionEditor';
 
 interface ChoiceEditorProps {
   index: number;
@@ -145,17 +146,14 @@ export function ChoiceEditor({
       )}
 
       {/* Conditions and Mutations Plugs */}
-      <ConditionEditor
-        label="AVAILABILITY CONDITION"
-        condition={choice.condition}
-        allPassageIds={availablePassageIds}
-        onChange={(condition) => onChange({ condition })}
+      <ExpressionEditor
+        expr={choice.condition ?? { type: 'literal', value: true }}
+        onChange={(expr: Expr) => onChange({ condition: expr })}
       />
 
-      <MutationListEditor
-        title="CHOICE CONSEQUENCES / MUTATIONS"
-        mutations={choice.mutations}
-        onChange={(mutations) => onChange({ mutations })}
+      <ActionListEditor
+        actions={choice.mutations ?? []}
+        onChange={(mutations: Action[]) => onChange({ mutations })}
       />
     </div>
   );

@@ -1,12 +1,15 @@
 import type { Region } from '../types/world';
 import type { Passage } from '../types/narrative';
 import { STORY_PASSAGES } from './storyPassages';
+import { MobConfig } from '../models/Mob';
+import { BESTIARY } from './bestiary';
 
 export const CUSTOM_WORLD_STORAGE_KEY = 'minecraft_custom_world_dataset';
 
 export interface OpenWorldPackage {
   regions: Record<string, Region>;
   passages: Record<string, Passage>;
+  mobs: Record<string, MobConfig>;
 }
 
 export const REGIONS: Record<string, Region> = {
@@ -56,10 +59,10 @@ export const REGIONS: Record<string, Region> = {
                 label: 'Inquire about the bandit break-in',
                 passageId: 'abandoned_shack',
                 condition: {
-                  type: 'flag',
-                  flag: 'golden_claw_recovered',
-                  comparator: '!=',
-                  value: true,
+                  type: 'binary',
+                  op: '!=',
+                  left: { type: 'get', path: 'flags.golden_claw_recovered' },
+                  right: { type: 'literal', value: true },
                 },
               },
             ],
@@ -193,7 +196,6 @@ export function validateWorldPackage(raw: unknown): OpenWorldPackage | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const candidate = raw as Record<string, any>;
 
-  // Handle format containing { regions, passages } or raw regions
   const regionsObj = candidate.regions || candidate;
   if (!regionsObj || typeof regionsObj !== 'object') return null;
 
@@ -209,9 +211,16 @@ export function validateWorldPackage(raw: unknown): OpenWorldPackage | null {
   }
 
   const passagesObj = candidate.passages || STORY_PASSAGES;
+
+  const mobsObj =
+    candidate.mobs && typeof candidate.mobs === 'object' && !Array.isArray(candidate.mobs)
+      ? candidate.mobs
+      : Object.fromEntries(BESTIARY.map((m) => [m.id, JSON.parse(JSON.stringify(m))]));
+
   return {
     regions: regionsObj as Record<string, Region>,
     passages: passagesObj as Record<string, Passage>,
+    mobs: mobsObj as Record<string, MobConfig>,
   };
 }
 
@@ -229,5 +238,6 @@ export function getInitialWorldPackage(): OpenWorldPackage {
   return {
     regions: JSON.parse(JSON.stringify(REGIONS)),
     passages: JSON.parse(JSON.stringify(STORY_PASSAGES)),
+    mobs: Object.fromEntries(BESTIARY.map((m) => [m.id, JSON.parse(JSON.stringify(m))]))
   };
 }

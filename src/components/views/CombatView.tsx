@@ -11,11 +11,14 @@ import { Character } from '../../models/Character';
 import { DiceRoller } from '../ui/DiceRoller';
 import { DieItem } from '../../types/dice';
 import { useObservable } from '../../hooks/useObservable';
+import { MobRegistry } from '../../engine/mobRegistry';
+import { EngineContext } from '../../types/controller';
 
 interface CombatViewProps {
   hero: Character;
   onUpdate?: () => void;
   initialMobName?: string;
+  engineContext?: EngineContext;
   onExitCombat?: (outcome: 'victory' | 'defeat') => void;
   narrativeContext?: {
     victoryPassageId?: string;
@@ -27,6 +30,7 @@ interface CombatViewProps {
 export function CombatView({
   hero,
   onUpdate,
+  engineContext,
   initialMobName,
   onExitCombat,
   narrativeContext,
@@ -61,14 +65,16 @@ export function CombatView({
 
   const initMobEncounter = (mobName: string) => {
     setSelectedMobName(mobName);
-    const config = BESTIARY.find((m) => m.name === mobName) || BESTIARY[0];
-    const createdMob = new Mob(config);
-    const eng = new CombatEngine(hero, createdMob);
+    const customMobs = engineContext?.mobs ?? {};
+    const targetMob = MobRegistry.createMob(mobName, customMobs);
+
+    const eng = new CombatEngine(hero, targetMob);
+    eng.initCombat();
     eng.initCombat();
     setEngine(eng);
     setLootClaimed(false);
     setCombatStatus('ongoing');
-    setLogs([{ type: 'notice', text: `Approached a wild ${createdMob.name}!` }]);
+    setLogs([{ type: 'notice', text: `Approached a wild ${targetMob.name}!` }]);
   };
 
   const isVictorious = combatStatus === 'victory' || activeMob.isDefeated();
@@ -159,11 +165,10 @@ export function CombatView({
 
   const handleLootRoll = (rolls: number[]): DieItem[] => {
     const roll = engine.ctx.combatState.guaranteedLootRoll || rolls[0];
-    const result = activeMob.onLootRoll(roll);
-    if (result.won) {
-      result.apply?.(hero);
+    const result = activeMob.onLootRoll(roll, hero);
+    if (result) {
       setLogs((prev) => [
-        { type: 'special', text: `Loot Roll (${roll}): Success! Acquired ${result.reward}!` },
+        { type: 'special', text: `Loot Roll (${roll}): Success! Acquired ${result}!` },
         ...prev,
       ]);
     } else {
@@ -177,8 +182,8 @@ export function CombatView({
     return [
       {
         value: roll,
-        tag: result.won ? result.reward.toUpperCase() : 'NO LOOT',
-        variant: result.won ? 'bonus' : 'neutral',
+        tag: result ? result.toUpperCase() : 'NO LOOT',
+        variant: result ? 'bonus' : 'neutral',
       },
     ];
   };
@@ -281,10 +286,10 @@ export function CombatView({
           {engine.ctx.combatState.effects.length > 0
             ? `[ ${engine.ctx.combatState.effects.map((e) => (e as any).name || 'Effect').join(' | ')} ]`
             : isVictorious
-            ? 'Encounter Won'
-            : isDefeated
-            ? 'Encounter Lost'
-            : 'Active Combat'}
+              ? 'Encounter Won'
+              : isDefeated
+                ? 'Encounter Lost'
+                : 'Active Combat'}
         </StatusBar>
       </PixelFrame>
 
@@ -295,10 +300,10 @@ export function CombatView({
             isDefeated
               ? 'DEFEAT'
               : isPendingCritPick
-              ? 'CRITICAL HIT'
-              : isVictorious
-              ? 'LOOT DROP'
-              : 'ACTION ROLLER'
+                ? 'CRITICAL HIT'
+                : isVictorious
+                  ? 'LOOT DROP'
+                  : 'ACTION ROLLER'
           }
           icon={isDefeated ? 'tnt' : isPendingCritPick || isVictorious ? 'spark' : 'target'}
         >
@@ -419,9 +424,9 @@ export function CombatView({
         <PixelFrame title="MOB RULES" icon="spark">
           <div id="mob-rules-stream">
             <span class="rules-header-tag">SPECIAL ABILITY</span>
-            <span class="rules-body-text">{activeMob.rules}</span>
+            <span class="rules-body-text">{activeMob.rulesText}</span>
             <span class="rules-header-tag">LOOT DROP</span>
-            <span class="rules-body-text">{activeMob.loot}</span>
+            <span class="rules-body-text">{activeMob.lootText}</span>
           </div>
         </PixelFrame>
       </div>

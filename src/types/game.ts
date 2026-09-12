@@ -1,4 +1,4 @@
-import type { SerializedCharacter } from '../models/Character';
+import type { CharacterConfig } from '../models/Character';
 
 export type GameModeId = 'sandbox' | 'narrative' | 'open_world';
 
@@ -42,6 +42,6 @@ export interface GameProgressionState {
 
 export interface GameSaveData {
   version: number;
-  character: SerializedCharacter;
+  character: CharacterConfig;
   game: GameProgressionState;
 }

@@ -1,8 +1,8 @@
 import type { GameSaveData, GameProgressionState } from '../types/game';
-import type { SerializedCharacter } from "./Character";
+import type { CharacterConfig } from "./Character";
 
 interface GameSaveBase<T extends string, U> {
-  character: SerializedCharacter;
+  character: CharacterConfig;
   type: T;
   data: U;
 }
@@ -38,7 +38,7 @@ export type GameSave = SandboxGameSave | NarrativeGameSave | OpenWorldGameSave;
 
 export function initGameSave<T extends GameSave["type"]>(
   type: T,
-  character: SerializedCharacter
+  character: CharacterConfig
 ): Extract<GameSave, { type: T }> {
   return {
     type,
@@ -93,7 +93,6 @@ export function migrateSaveData(raw: any): GameSaveData {
         name: 'Steve',
         hearts: 20,
         maxHearts: 20,
-        health: 20,
         restarts: 0,
         equipmentInventoryIds: ['Wooden Pickaxe'],
         equipped: { weapon: null, armor: null, pickaxe: 'Wooden Pickaxe', key: null },

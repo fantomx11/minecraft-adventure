@@ -2,7 +2,8 @@ import { PixelFrame } from '../ui/PixelFrame';
 import { IconName, ICONS } from '../../data/icons';
 import { Passage, PassageChoice } from '../../types/narrative';
 import { ChoiceEditor } from './ChoiceEditor';
-import { MutationListEditor } from './MutationListEditor';
+import { ActionListEditor } from './ActionNodeEditor';
+import { Action } from '../../types/ast';
 
 interface PassageFormProps {
   passage: Passage;
@@ -90,10 +91,9 @@ export function PassageForm({
 
       {/* On-Enter Mutations */}
       <div style={{ marginBottom: '16px' }}>
-        <MutationListEditor
-          title="ON ENTER PASSAGE MUTATIONS"
-          mutations={passage.onEnterMutations}
-          onChange={(mutations) => onUpdatePassage('onEnterMutations', mutations)}
+        <ActionListEditor
+          actions={passage.onEnterMutations || []}
+          onChange={(mutations: Action[]) => onUpdatePassage('onEnterMutations', mutations)}
         />
       </div>
 

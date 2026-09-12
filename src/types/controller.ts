@@ -4,6 +4,7 @@ import type { Passage } from './narrative';
 import type { TrackedMaterial } from './inventory';
 import type { Region } from './world';
 import { GameStore } from '../models/GameStore';
+import { MobConfig } from '../models/Mob';
 
 export interface ReturnBannerDescriptor {
   label: string;
@@ -21,6 +22,7 @@ export interface EngineContext {
   game: GameStore;
   passages: Record<string, Passage>;
   regions: Record<string, Region>;
+  mobs: Record<string, MobConfig>; // <-- Add this
   saveState: () => void;
   setActiveView: (view: ActiveView) => void;
   setPendingMaterial: (mat: TrackedMaterial | null) => void;
